@@ -1,4 +1,51 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>사진 여행 지도</title>
-<style>body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.7;color:#191F28}a{color:#3182F6}</style></head>
-<body><h1>사진 여행 지도</h1><p>사진 속 위치·시간만으로 여행 지도 영상을 만드는 iOS 앱입니다.</p>
-<ul><li><a href="privacy.html">개인정보처리방침</a></li><li>문의: <a href="mailto:c20034100@gmail.com">c20034100@gmail.com</a></li></ul></body></html>
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>사진 여행 지도 — 사진만으로 만드는 여행 지도 영상</title>
+<meta name="description" content="사진 속 위치·시간 정보만 읽어서 다녀온 곳을 지도 위에 이어 그리는 iOS 앱. 세로·가로·정사각 영상으로 저장하고 스토리·릴스에 올려보세요.">
+<meta property="og:title" content="사진 여행 지도"><meta property="og:description" content="사진만으로 만드는 여행 지도 영상"><meta property="og:image" content="https://leehueeng.github.io/phototravelmap-site/img/s01.png">
+<style>
+:root{--blue:#3182F6;--ink:#191F28;--grey:#6B7684;--grey2:#8B95A1;--bg:#fff;--soft:#F2F4F6;--blue50:#E8F3FF}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg);line-height:1.6;letter-spacing:-.01em}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+header{padding:64px 0 32px;text-align:center}
+.icon{width:96px;height:96px;border-radius:22px;box-shadow:0 12px 30px rgba(49,130,246,.25)}
+h1{font-size:38px;margin:20px 0 8px;letter-spacing:-.03em}
+.lead{font-size:18px;color:var(--grey);margin:0 auto 24px;max-width:560px}
+.cta{display:inline-block;background:var(--blue);color:#fff;text-decoration:none;font-weight:700;padding:14px 26px;border-radius:14px;font-size:16px}
+.cta.soft{background:var(--blue50);color:#1B64DA;margin-left:8px}
+.shots{display:flex;gap:16px;overflow-x:auto;padding:28px 0 12px;scroll-snap-type:x mandatory}
+.shots img{height:520px;border-radius:24px;flex:none;scroll-snap-align:center;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+section{padding:40px 0}
+h2{font-size:24px;margin:0 0 18px;letter-spacing:-.02em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.card{background:var(--soft);border-radius:18px;padding:20px}
+.card b{display:block;font-size:17px;margin-bottom:6px}.card p{margin:0;color:var(--grey);font-size:15px}
+.badge{display:inline-block;background:var(--blue50);color:#1B64DA;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:600;margin-bottom:10px}
+footer{padding:40px 0 60px;color:var(--grey2);font-size:13px;text-align:center}footer a{color:#1B64DA}
+@media (max-width:600px){h1{font-size:30px}.shots img{height:420px}}
+</style></head>
+<body>
+<header class="wrap">
+  <img class="icon" src="img/icon.png" alt="사진 여행 지도 아이콘">
+  <h1>사진 여행 지도</h1>
+  <p class="lead">사진 속 <b>위치와 촬영 시간</b>만 읽어서, 다녀온 곳들을 지도 위에서 움직이는 영상으로 만들어요. 사진은 열지 않고, 어디로도 보내지 않아요.</p>
+  <a class="cta" href="https://apps.apple.com/app/id6806957354">App Store에서 받기</a><a class="cta soft" href="privacy.html">개인정보처리방침</a>
+  <p class="lead" style="font-size:13px;margin-top:10px">iOS 17 이상 · 무료 (프리미엄 1회 구매)</p>
+</header>
+<div class="wrap shots">
+  <img src="img/s01.png" alt="사진만 있으면 여행 지도 영상"><img src="img/s02.png" alt="다녀온 여행 자동 정리"><img src="img/s03.png" alt="지도 위를 달리는 나의 발자국"><img src="img/s05.png" alt="미리보는 동안 영상 완성">
+</div>
+<section class="wrap">
+  <h2>이렇게 동작해요</h2>
+  <div class="grid">
+    <div class="card"><span class="badge">개인정보</span><b>사진은 열지 않아요</b><p>위치·시간 메타데이터만 기기 안에서 읽어요. 사진도 위치 기록도 서버로 가지 않아요.</p></div>
+    <div class="card"><span class="badge">자동 정리</span><b>어디에 며칠 있었는지</b><p>가까운 곳의 사진끼리 묶어 목적지를 찾고, 집 근처는 빼요. 여행별로 골라 만들 수 있어요.</p></div>
+    <div class="card"><span class="badge">영상</span><b>스토리·릴스·유튜브 비율</b><p>세로·정사각·가로, 1080p. 길이를 정하면 배속은 자동. 화면과 상관없이 뒤에서 만들어져요.</p></div>
+    <div class="card"><span class="badge">프리미엄</span><b>광고 없이, 더 많은 스타일</b><p>어두운 테마·지구본·위성 지도·카메라 모드·해상도. 한 번 구매로 계속.</p></div>
+  </div>
+</section>
+<footer class="wrap">
+  <a href="privacy.html">개인정보처리방침</a> · 문의 <a href="mailto:c20034100@gmail.com">c20034100@gmail.com</a><br>
+  지도 Natural Earth · Esri · © OpenStreetMap contributors / 지명 Apple Photos · GeoNames · © 2026 hyeonu lee
+</footer>
+</body></html>
