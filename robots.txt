@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://leehueeng.github.io/phototravelmap-site/sitemap.xml
