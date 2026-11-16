@@ -58,6 +58,20 @@
 #cm-page img.fail, #cm-screen img.fail { opacity: 0; }
 .cm-fab { position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 19; display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 18px 0 14px; border-radius: 999px; background: var(--primary); color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 4px 14px rgba(49,130,246,.35); }
 .cm-fab:active { background: var(--primary-press); }
+.cm-side-label, .cm-side-write { display: none; }   /* 웹의 넓은 화면(webver/web.css)에서만 쓴다 */
+.cm-webrow { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin: 0 0 10px; padding: 0 12px; border-radius: 12px; background: var(--primary-weak); color: var(--primary-weak-text); font-size: 14px; font-weight: 600; text-align: left; }
+.cm-webrow svg { flex: none; width: 18px; height: 18px; }
+.cm-webrow span { flex: 1; min-width: 0; }
+.cm-webrow .chev { flex: none; opacity: .6; }
+.cm-webfind { margin: 14px 0 10px; padding: 16px; border-radius: 16px; background: var(--bg-grey); text-align: center; }
+.cm-webbar { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 16px; border-radius: 23px; background: var(--layer, #fff); border: 1px solid var(--border); color: var(--text-3); }
+.cm-webbar b { color: var(--text); font-size: 17px; font-weight: 700; }
+.cm-webfind p { margin: 10px 0 0; font-size: 14px; color: var(--text-2); }
+.cm-weburl { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--border); font-size: 15px; font-weight: 600; text-align: center; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.cm-webacts { display: flex; gap: 8px; }
+.cm-webacts .btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 52px; line-height: 1; }
+.cm-webacts .btn svg { width: 18px; height: 18px; flex: none; }
+.cm-link { display: block; width: 100%; min-height: 44px; margin-top: 6px; color: var(--text-3); font-size: 14px; }
 
 /* ---------- 하위 화면(글 보기 · 글쓰기) · 시트 · 알림 ---------- */
 @keyframes cm-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

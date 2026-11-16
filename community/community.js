@@ -35,6 +35,9 @@ const IC = {
   send: svg('<path d="M5 12h13M13 6l6 6-6 6"/>', { w: 2.400 }),
   refresh: svg('<path d="M19 12a7 7 0 1 1-2.100-5M19 4v4h-4"/>'),
   search: svg('<circle cx="11" cy="11" r="6.500"/><path d="M16 16l4.500 4.500"/>'),
+  web: svg('<rect x="3" y="4.500" width="18" height="12" rx="2"/><path d="M8.500 20h7M12 16.500V20"/>'),
+  copy: svg('<rect x="8.500" y="8.500" width="11" height="11" rx="2"/><path d="M15.500 8.500V6.500a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>'),
+  out: svg('<path d="M12 15V4M8 7.500L12 3.500l4 4M5 12.500v6a1.500 1.500 0 0 0 1.500 1.500h11a1.500 1.500 0 0 0 1.500-1.500v-6"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>', { w: 2.400 }),
   point: svg('<circle cx="12" cy="12" r="8.500"/><path d="M10 16V8h2.800a2.500 2.500 0 0 1 0 5H10"/>', { s: 18 }),
   chev: svg('<path d="M9 5l7 7-7 7"/>', { s: 18 }),
@@ -174,22 +177,29 @@ function needWriter(then) {
 // ---------- 탭 본문: 목록 ----------
 const chip = (act, v, label, on, extra) => `<button type="button" class="chip ${on ? 'active' : ''}" data-act="${act}" data-v="${esc(v)}" ${extra || ''}>${esc(label)}</button>`;
 let qTimer = 0;
+// 웹 버전의 넓은 화면(PC): 검색 칸을 늘 보여 주고 고르기를 왼쪽 기둥에 둔다(배치는 web.css)
+const isWide = () => !!H && H.platform === 'web' && typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1024px)').matches;
 function renderPage() {
   const box = $('#cm-page'); if (!box) return;
   if (!ACC() || !ACC().base) { box.innerHTML = `<h1 class="title">${esc(tr('커뮤니티'))}</h1><p class="cm-hint">${esc(tr('커뮤니티 서버가 아직 준비되지 않았어요.'))}</p>`; return; }
   const subs = ST.region ? ((regionOf(ST.region) || {}).subs || []) : [];
+  // 묶음 셋: 앞줄(검색·웹 안내) · 고르기(게시판·지역) · 목록. 앱에서는 그냥 위에서 아래로 놓이고, 웹의 넓은 화면(web.css)에서는 고르기가 왼쪽 기둥, 나머지가 오른쪽 본문이 된다
+  const wide = isWide(); const showQ = ST.qOpen || ST.q || wide;
   box.innerHTML = `<div class="cm-head"><h1 class="title">${esc(tr('커뮤니티'))}</h1><span class="top-spacer"></span><span id="cm-headbtns"></span></div>
-    ${ST.qOpen || ST.q ? `<form class="cm-search" id="cm-search" action="#"><span class="cm-search-ic">${IC.search}</span><input id="cm-q" type="search" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" placeholder="${esc(tr('제목·내용 검색'))}" aria-label="${esc(tr('제목·내용 검색'))}" value="${esc(ST.q)}"><button type="button" data-act="q-clear" aria-label="${esc(tr('검색 닫기'))}">×</button></form>` : ''}
+    <div class="cm-pre">${showQ ? `<form class="cm-search" id="cm-search" action="#"><span class="cm-search-ic">${IC.search}</span><input id="cm-q" type="search" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" placeholder="${esc(tr('제목·내용 검색'))}" aria-label="${esc(tr('제목·내용 검색'))}" value="${esc(ST.q)}"><button type="button" data-act="q-clear" aria-label="${esc(tr('검색 닫기'))}" ${wide && !ST.q ? 'hidden' : ''}>×</button></form>` : ''}
+    ${webOn() && !ST.q && !ST.qOpen && !ST.mine ? `<button type="button" class="cm-webrow" data-act="web-info">${IC.web}<span>${esc(tr('PC·웹에서도 보고 글을 쓸 수 있어요'))}</span><i class="chev"></i></button>` : ''}</div>
+    <div class="cm-side"><button type="button" class="cm-side-write" data-act="write">${IC.pen}<span>${esc(tr('글쓰기'))}</span></button>
+    <div class="cm-side-label">${esc(tr('게시판'))}</div>
     <div class="cm-chips" id="cm-boards">${chip('board', '', tr('전체|board'), !ST.board && !ST.mine)}${BOARDS.map(([k, n]) => chip('board', k, tr(n), ST.board === k && !ST.mine)).join('')}${authed() ? chip('mine', '1', tr('내 글'), ST.mine) : ''}</div>
-    ${ST.mine ? '' : `<div class="cm-chips small" id="cm-regions">${chip('region', '', tr('모든 지역'), !ST.region)}${regions().map(r => chip('region', r.id, rname(r.id), ST.region === r.id)).join('')}</div>`}
-    ${!ST.mine && subs.length ? `<div class="cm-chips small" id="cm-subs">${chip('sub', '', tr('전체|board'), !ST.sub)}${subs.map(cc => chip('sub', cc, cname(cc), ST.sub === cc)).join('')}</div>` : ''}
-    ${ST.board && !ST.mine ? `<p class="cm-boardhint">${esc(tr(BOARD_HINT[ST.board]))}</p>` : ''}
-    <div id="cm-list"></div>
+    ${ST.mine ? '' : `<div class="cm-side-label">${esc(tr('지역'))}</div><div class="cm-chips small" id="cm-regions">${chip('region', '', tr('모든 지역'), !ST.region)}${regions().map(r => chip('region', r.id, rname(r.id), ST.region === r.id)).join('')}</div>`}
+    ${!ST.mine && subs.length ? `<div class="cm-chips small" id="cm-subs">${chip('sub', '', tr('전체|board'), !ST.sub)}${subs.map(cc => chip('sub', cc, cname(cc), ST.sub === cc)).join('')}</div>` : ''}</div>
+    <div class="cm-main">${ST.board && !ST.mine ? `<p class="cm-boardhint">${esc(tr(BOARD_HINT[ST.board]))}</p>` : ''}
+    <div id="cm-list"></div></div>
     <button type="button" class="cm-fab" data-act="write" aria-label="${esc(tr('글쓰기'))}">${IC.pen}<span>${esc(tr('글쓰기'))}</span></button>`;
   paintHead(); paintList();
   const qi = $('#cm-q');
   if (qi) {   // 치는 대로 찾는다(잠깐 멈추면). 엔터는 바로 찾고 키보드를 내린다
-    qi.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { const v = qi.value.trim(); if (v !== ST.q) { ST.q = v; loadList(); } }, 350); });
+    qi.addEventListener('input', () => { const x = $('#cm-search [data-act="q-clear"]'); if (x) x.hidden = isWide() && !qi.value; clearTimeout(qTimer); qTimer = setTimeout(() => { const v = qi.value.trim(); if (v !== ST.q) { ST.q = v; loadList(); } }, 350); });
     $('#cm-search').addEventListener('submit', (e) => { e.preventDefault(); clearTimeout(qTimer); const v = qi.value.trim(); if (v !== ST.q) { ST.q = v; loadList(); } qi.blur(); });
   }
   const on = $('#cm-boards .chip.active'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -229,7 +239,7 @@ ACT['q-open'] = () => {   // 돋보기: 검색 칸을 열고 초점. 열려 있�
   if (ST.qOpen && !ST.q) { ST.qOpen = false; renderPage(); return; }
   ST.qOpen = true; renderPage(); const qi = $('#cm-q'); if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) { /* ignore */ } }
 };
-ACT['q-clear'] = () => { clearTimeout(qTimer); const had = !!ST.q; ST.q = ''; ST.qOpen = false; renderPage(); if (had) loadList(); };
+ACT['q-clear'] = () => { clearTimeout(qTimer); const had = !!ST.q; ST.q = ''; ST.qOpen = false; renderPage(); if (had) loadList(); if (isWide()) { const qi = $('#cm-q'); if (qi) qi.focus(); } };
 ACT.more = () => loadList(true);
 ACT.reload = () => { loadList(); loadMe(); };
 ACT.open = (d) => show('post', { id: +d.id });
@@ -237,9 +247,29 @@ ACT['cm-menu'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티'))}</div><ul class="rows">
     ${authed() ? `<li class="row tap" data-act="points"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">${esc(tr('내 포인트'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="blocks"><span class="cm-ic">${IC.block}</span><div class="row-body"><div class="row-title">${esc(tr('차단한 사람'))}</div></div><span class="chev"></span></li>` : ''}
+    ${webOn() ? `<li class="row tap" data-act="web-info"><span class="cm-ic">${IC.web}</span><div class="row-body"><div class="row-title">${esc(tr('웹에서 보기 · 글쓰기'))}</div><div class="row-desc">${esc(tr('PC나 다른 기기의 브라우저에서'))}</div></div><span class="chev"></span></li>` : ''}
     <li class="row tap" data-act="terms-view"><span class="cm-ic">${IC.flag}</span><div class="row-body"><div class="row-title">${esc(tr('커뮤니티 이용 약속'))}</div><div class="row-desc">${esc(tr('신고·차단 안내'))}</div></div><span class="chev"></span></li></ul>
     <button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('닫기'))}</button>`);
 };
+// 웹 버전 안내: 검색해서 들어오거나, 주소를 복사하거나, 공유로 PC·다른 기기에 보낸다
+const WEB_URL = 'https://passport.hueeng.com/community/';
+const webOn = () => !!H && H.platform !== 'web';
+const webUrl = () => (ST.meta && typeof ST.meta.web === 'string' && /^https:\/\//.test(ST.meta.web) ? ST.meta.web : WEB_URL);
+function copyText(text) {   // 앱 안의 웹뷰는 navigator.clipboard 가 막혀 있을 수 있어 예전 방식으로도 해 본다
+  const old = () => { try { const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0;font-size:16px'; document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, () => old()); } catch (e) { /* fall through */ }
+  return Promise.resolve(old());
+}
+ACT['web-info'] = () => {
+  const u = webUrl(); const shown = u.replace(/^https:\/\//, '').replace(/\/$/, '');
+  sheet(`<div class="sheet-title">${esc(tr('웹에서도 커뮤니티를 쓸 수 있어요'))}</div><p class="desc">${esc(tr('PC나 다른 기기의 브라우저에서 글을 보고 쓸 수 있어요. 앱과 같은 계정으로 로그인하면 내 글과 포인트가 그대로 이어져요.'))}</p>
+    <div class="cm-webfind"><div class="cm-webbar">${IC.search}<b>${esc(tr('여행여권'))}</b></div><p>${esc(tr('검색창에 ‘여행여권’을 검색하세요'))}</p></div>
+    <div class="cm-weburl" id="cm-weburl">${esc(shown)}</div>
+    <div class="cm-webacts"><button type="button" class="btn secondary" data-act="web-copy">${IC.copy}<span>${esc(tr('링크 복사'))}</span></button><button type="button" class="btn primary" data-act="web-share">${IC.out}<span>${esc(tr('공유하기'))}</span></button></div>
+    <button type="button" class="cm-link" data-act="sheet-close">${esc(tr('닫기'))}</button>`);
+};
+ACT['web-copy'] = async () => { const ok = await copyText(webUrl()); toast(ok ? tr('링크를 복사했어요.') : tr('복사하지 못했어요. 주소를 길게 눌러 복사해 주세요.')); };
+ACT['web-share'] = () => { const u = webUrl(); if (H && H.shareText) H.shareText(tr('여행여권 커뮤니티 — 웹에서도 여행 이야기를 보고 쓸 수 있어요.') + '\n' + u, u, tr('여행여권 커뮤니티')); else ACT['web-copy'](); };
 ACT['terms-view'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티 이용 약속'))}</div><ul class="cm-terms">${TERMS.map(x => `<li>${esc(tr(x))}</li>`).join('')}</ul><p class="caption">${esc(tr('문의: {m}', { m: (ST.meta && ST.meta.contact) || 'hi@hueeng.com' }))}</p><button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('닫기'))}</button>`);
 };

@@ -84,5 +84,51 @@ textarea, select { font: inherit; color: inherit; }
   .modal-root .sheet-title { margin-top: 8px; }
 }
 
+/* ---------- PC(1024px 이상): 폰 화면을 가운데에 세워 두지 않는다. 왼쪽 기둥(글쓰기 · 게시판 · 지역) + 넓은 목록, 검색 칸은 늘 보이고, 글·글쓰기 화면도 넓게 ---------- */
+@media (min-width: 1024px) {
+  .page { max-width: 1140px; padding: 24px 28px 56px; }
+  #cm-page { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 44px; align-items: start; }
+  #cm-page > .title, #cm-page > .cm-hint { grid-column: 1 / -1; }
+  .cm-head { grid-column: 1 / -1; grid-row: 1; margin: 0 0 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .cm-head .title { margin: 0; font-size: 28px; line-height: 38px; }
+  .cm-head [data-act="q-open"] { display: none; }   /* 검색 칸이 늘 보인다 */
+  .cm-pre { grid-column: 2; grid-row: 2; max-width: 780px; }
+  .cm-main { grid-column: 2; grid-row: 3; max-width: 780px; min-width: 0; }
+  .cm-side { grid-column: 1; grid-row: 2 / span 2; position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow-y: auto; scrollbar-width: thin; }
+  .cm-side-write { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 48px; border-radius: 14px; background: var(--primary); color: #fff; font-size: 16px; font-weight: 700; }
+  .cm-side-write svg { width: 20px; height: 20px; }
+  .cm-side-label { display: block; margin: 22px 0 8px; padding: 0 12px; font-size: 12px; font-weight: 700; color: var(--text-3); }
+  .cm-side .cm-chips { margin: 0 0 4px; padding: 0; }
+  #cm-boards { flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+  #cm-boards .chip { display: flex; align-items: center; width: 100%; height: 42px; padding: 0 12px; border-radius: 10px; background: transparent; color: var(--text-2); font-size: 15px; font-weight: 600; text-align: left; }
+  #cm-boards .chip.active { background: var(--primary-weak); color: var(--primary-weak-text); }
+  #cm-regions, #cm-subs { padding: 0 6px; gap: 6px; }
+  #cm-subs { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .cm-fab { display: none; }
+  .cm-search { height: 48px; margin-bottom: 16px; border-radius: 14px; }
+  .cm-search input { height: 48px; }
+  .cm-boardhint { font-size: 14px; margin-bottom: 12px; }
+  .cm-card { padding: 18px 20px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--layer, var(--bg)); transition: border-color .12s, box-shadow .12s; }
+  .cm-card.big { display: grid; grid-template-columns: 240px minmax(0, 1fr); column-gap: 20px; align-items: start; }
+  .cm-card.big { grid-template-rows: 1fr auto; }
+  .cm-card.big .cm-card-photo { grid-row: 1 / span 2; margin-bottom: 0; border-radius: 12px; }
+  .cm-card.big .cm-card-main, .cm-card.big .cm-card-foot { grid-column: 2; }
+  .cm-card-thumb { width: 104px; height: 104px; }
+  .cm-card-title { font-size: 18px; line-height: 26px; }
+  .cm-card-ex { font-size: 15px; line-height: 22px; }
+  .cm-scroll > * { max-width: 760px; }
+  #cm-screen .sd-top { padding-left: max(8px, calc(50% - 390px)); padding-right: max(8px, calc(50% - 390px)); border-bottom: 1px solid var(--border); }
+  .cm-scroll { padding-top: 20px; }
+  .cm-bar { padding: 12px max(16px, calc(50% - 380px)); }
+  .cm-bar .btn { max-width: 760px; }
+  .wv-foot { padding-bottom: 28px; }
+  .wv-foot-in { max-width: 1140px; padding: 0 28px; }
+}
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  .cm-card:hover { border-color: var(--grey300, #d1d6db); box-shadow: 0 4px 16px rgba(0,0,0,.06); }
+  #cm-boards .chip:hover:not(.active) { background: var(--fill); }
+  .cm-side-write:hover { background: var(--blue600); }
+}
+
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media print { .wv-top, .wv-foot, .cm-fab, #cm-toast { display: none !important; } }
