@@ -1,0 +1,88 @@
+/* web.css — 여행여권 웹 커뮤니티의 껍데기(머리 줄 · 본문 폭 · 아래 줄)와, 앱 화면을 브라우저에 맞추는 규칙.
+   읽는 순서: base.css(앱 style.css 에서 뽑은 토큰·공용 부품) → community.css(앱과 같은 파일) → 이 파일. 여기 클래스는 wv- 로 시작한다.
+   원본은 webver/web.css — 사이트의 community/web.css 는 scripts/build_web_community.py 가 복사한 것이다. */
+
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }   /* 글·시트가 열려 본문 스크롤이 잠겨도 화면이 옆으로 밀리지 않게 */
+html, body { margin: 0; }
+body { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; font-family: var(--font); font-size: 15px; line-height: 1.5; letter-spacing: -0.01em; background: var(--bg); color: var(--text); -webkit-tap-highlight-color: transparent; }
+a { color: inherit; }
+textarea, select { font: inherit; color: inherit; }
+.wv-skip { position: fixed; left: 12px; top: -80px; z-index: 100; background: var(--layer); color: var(--text); padding: 10px 14px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+.wv-skip:focus { top: 12px; }
+
+/* ---------- 머리 줄: 앱 이름(랜딩으로) · 메뉴 · 계정 ---------- */
+.wv-top { flex: none; background: var(--bg); border-bottom: 1px solid var(--border); padding-top: env(safe-area-inset-top); }
+.wv-top-in { display: flex; align-items: center; gap: 8px; height: 56px; max-width: 1140px; margin: 0 auto; padding: 0 16px 0 20px; }
+.wv-brand { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; text-decoration: none; }
+.wv-brand img { flex: none; width: 30px; height: 30px; border-radius: 8px; }
+.wv-brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wv-nav { display: none; align-items: center; gap: 4px; margin-right: 8px; }
+.wv-nav a { padding: 8px 10px; border-radius: 10px; font-size: 14px; font-weight: 600; color: var(--text-2); text-decoration: none; white-space: nowrap; }
+#wv-account { flex: none; display: inline-flex; min-width: 0; }
+.wv-login { height: 36px; padding: 0 14px; border-radius: 999px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.wv-login:active { background: var(--primary-press); }
+.wv-me { display: inline-flex; align-items: center; gap: 6px; height: 36px; max-width: 44vw; padding: 0 12px 0 4px; border-radius: 999px; background: var(--fill); color: var(--text); font-size: 14px; font-weight: 600; }
+.wv-me .cm-ava { width: 28px; height: 28px; font-size: 13px; }
+.wv-me span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- 본문: 앱의 탭 화면과 같은 폭. 좌우 20px 은 community.css 의 칩 줄(.cm-chips)이 가장자리까지 밀고 나가는 만큼이다 ---------- */
+#pages { flex: 1; }
+.page { max-width: 600px; margin: 0 auto; padding: 4px 20px 28px; }
+.cm-fab { right: max(16px, calc(50% - 280px)); bottom: calc(20px + env(safe-area-inset-bottom)); }   /* 앱은 아래 탭 위에 띄운다. 웹은 탭이 없고, 넓은 화면에서는 본문 줄 오른쪽 끝에 맞춘다 */
+.cm-scroll { scrollbar-gutter: stable both-edges; }   /* 스크롤 막대가 자리를 차지하는 브라우저에서도 본문 줄이 가운데에 오게 */
+
+/* ---------- 아래 줄 ---------- */
+.wv-foot { flex: none; border-top: 1px solid var(--border); padding: 20px 0 calc(92px + env(safe-area-inset-bottom)); font-size: 12px; line-height: 1.7; color: var(--text-3); }   /* 아래 여백: 글쓰기 버튼에 가리지 않게 */
+.wv-foot-in { max-width: 600px; margin: 0 auto; padding: 0 20px; }
+.wv-foot a { text-decoration: none; }
+.wv-foot-links, .wv-langs { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 8px; }
+.wv-foot-links { font-size: 13px; color: var(--text-2); }
+.wv-langs a[aria-current="true"] { color: var(--text-2); font-weight: 600; }
+.wv-biz, .wv-copy { margin: 0 0 4px; overflow-wrap: anywhere; }
+
+/* ---------- 로그인 버튼 아래 안내(시트 안에 복사되어 보인다) · 웹 대화창 ---------- */
+.login-btns .wv-hint { margin: 2px 0 0; text-align: center; }
+.login-btns .wv-legal { display: flex; justify-content: center; gap: 16px; margin: 0; }
+.wv-rows { margin: 4px 0 12px; }
+.wv-rows .row { width: calc(100% + 16px); text-align: left; text-decoration: none; }   /* .row.tap 은 좌우로 8px 씩 넓다 */
+.wv-rows .row-title { display: block; }
+.wv-rows .row-desc { display: block; }
+#wv-modal .btn + .btn { margin-top: 8px; }
+#wv-modal .field { margin-bottom: 4px; }
+#wv-modal .field input { font-size: 16px; }   /* iOS 는 16px 미만 입력창을 누르면 화면을 확대한다 */
+#wv-modal:not([hidden]) ~ #cm-toast { top: calc(16px + env(safe-area-inset-top)); bottom: auto; }   /* 웹 대화창이 떠 있는 동안 알림은 위쪽에(아래 버튼을 가리지 않게) */
+
+/* ---------- 웹에는 여행 탭이 없다: 일정·여행 기록 붙이기와 여행일정공유 글쓰기는 앱에서만 ---------- */
+.cm-attbtns { display: none; }
+.cm-flabel:has(+ #cm-w-attach > .cm-attbtns) { display: none; }
+#cm-w-board .chip[data-v="plan"]:not(.active) { display: none; }
+
+/* ---------- 마우스로 볼 때 ---------- */
+@media (hover: hover) and (pointer: fine) {
+  .cm-chips { flex-wrap: wrap; overflow: visible; }   /* 옆으로 미는 칩 줄은 마우스로 넘기기 어렵다 → 줄을 바꾼다 */
+  .cm-card:hover .cm-card-title, .wv-foot a:hover, .login-btns .wv-legal a:hover { text-decoration: underline; }
+  .top-btn:hover, .row.tap:hover, .cm-cmt-more:hover { background: var(--fill); }
+  .cm-cmt-more { border-radius: 10px; }
+  .chip:hover:not(.active):not(:disabled), .wv-me:hover, .btn.secondary:hover, .cm-like:hover:not(.on) { background: var(--grey200); }
+  .btn.primary:hover:not(:disabled), .wv-login:hover, .cm-fab:hover, .cm-send:hover { background: var(--blue600); }
+  .wv-nav a:hover { background: var(--fill); color: var(--text); }
+}
+
+/* ---------- 넓은 화면: 머리 줄 메뉴, 하위 화면은 본문 줄에 맞추고, 바텀시트는 가운데 창으로 ---------- */
+@media (min-width: 720px) {
+  .wv-top-in { height: 64px; padding: 0 28px; }
+  .wv-brand { font-size: 20px; }
+  .wv-brand img { width: 34px; height: 34px; border-radius: 9px; }
+  .wv-nav { display: flex; }
+  .page { padding-top: 12px; }
+  #cm-screen .sd-top { height: 64px; padding-left: max(8px, calc(50% - 290px)); padding-right: max(8px, calc(50% - 290px)); }
+  .cm-bar { padding: 12px max(16px, calc(50% - 280px)); }
+  .modal-root { display: grid; place-items: center; padding: 24px; }
+  .modal-root .sheet { position: relative; left: auto; right: auto; bottom: auto; width: 100%; max-width: 440px; max-height: min(84vh, 760px); border-radius: 22px; padding: 14px 24px 22px; }
+  #cm-sheet .sheet { max-height: min(84vh, 760px); }
+  .modal-root .handle { display: none; }
+  .modal-root .sheet-title { margin-top: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media print { .wv-top, .wv-foot, .cm-fab, #cm-toast { display: none !important; } }

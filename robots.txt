@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://leehueeng.github.io/phototravelmap-site/sitemap.xml
+Sitemap: https://leehueeng.github.io/phototravelmap-site/community/sitemap.xml
