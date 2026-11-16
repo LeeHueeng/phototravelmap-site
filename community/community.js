@@ -579,6 +579,15 @@ const Community = {
   /** 다른 화면(설정 탭의 내 정보 등)에서 쓰는 창구: 지금 아는 포인트 합계(모르면 null) · 포인트 시트 열기 */
   points() { return ST.me ? (ST.me.points || 0) : null; },
   openPoints() { ACT.points(); },
+  /** 다른 화면에서 글쓰기를 연다(여행 탭의 일기를 게시판에 공유): 제목·본문·사진을 채운 글쓰기 화면. 사진은 여기서 다시 줄여 올리고, '올리기'를 눌러야 공개된다 */
+  compose(o) {
+    o = o || {};
+    needWriter(() => {
+      const d = newDraft(BOARDS.some(b => b[0] === o.board) ? o.board : 'free'); d.title = String(o.title || '').slice(0, limit('title', 60)); d.body = String(o.body || '').slice(0, limit('body', 5000));
+      d.sig = draftSig(newDraft(d.board)); ST.draft = d; show('write');   // 빈 글과 견줘 '쓰던 글'로 본다(나갈 때 물어본다)
+      if (o.files && o.files.length) addFiles(o.files);
+    });
+  },
   get busy() { return ST.stack.length > 0; },
   _debug: { ST, closeScreens, renderPage, loadList, records, toJpeg, get host() { return H; } },   // 헤드리스 시험용
 };
