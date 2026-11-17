@@ -311,6 +311,44 @@ function commentHtml(c) {
   return `<li class="cm-cmt" data-cid="${c.id}"><span class="cm-ava">${esc((c.author.name || '?').slice(0, 1))}</span><div class="cm-cmt-body"><div class="cm-cmt-head"><b>${esc(c.author.name || tr('이름 없음'))}</b><span>${esc(ago(c.createdAt))}</span></div><p>${esc(c.body)}</p></div>
     <button type="button" class="cm-cmt-more" data-act="cmt-menu" data-id="${c.id}" aria-label="${esc(tr('더 보기'))}">${IC.more}</button></li>`;
 }
+// ---------- 서식 있는 본문 ----------
+// 서버가 걸러 저장한 본문(bodyHtml)도 그릴 때 한 번 더 거른다: 허용한 태그만, 속성은 정해 둔 것만. 사진은 <img data-photo="id"> 자리를 photos 의 주소로 바꾼다.
+const RT_INLINE = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', S: 's', STRIKE: 's', DEL: 's' };
+const RT_BLOCK = { P: 'p', DIV: 'p', H1: 'h2', H2: 'h2', H3: 'h3', H4: 'h3', UL: 'ul', OL: 'ol', LI: 'li', BLOCKQUOTE: 'blockquote', TABLE: 'table', THEAD: 'tbody', TBODY: 'tbody', TFOOT: 'tbody', TR: 'tr', TD: 'td', TH: 'th' };
+const RT_SKIP = { SCRIPT: 1, STYLE: 1, IFRAME: 1, OBJECT: 1, EMBED: 1, TEMPLATE: 1, SVG: 1, MATH: 1, TEXTAREA: 1, SELECT: 1, BUTTON: 1, NOSCRIPT: 1, TITLE: 1, HEAD: 1 };
+/** html 을 걸러 다시 쓴다. img(el) 은 사진 자리를 무엇으로 쓸지 정한다(빈 문자열이면 뺀다). */
+function cleanHtml(html, img) {
+  const doc = new DOMParser().parseFromString('<body>' + String(html || '') + '</body>', 'text/html');
+  const walk = (node) => {
+    let out = '';
+    for (const n of Array.from(node.childNodes)) {
+      if (n.nodeType === 3) { out += esc(n.nodeValue).replace(/&quot;/g, '"').replace(/&#39;/g, "'"); continue; }
+      if (n.nodeType !== 1 || RT_SKIP[n.tagName]) continue;
+      const tag = n.tagName;
+      if (tag === 'BR') { out += '<br>'; continue; }
+      if (tag === 'HR') { out += '<hr>'; continue; }
+      if (tag === 'IMG') { out += img ? img(n) : ''; continue; }
+      const t = RT_INLINE[tag] || RT_BLOCK[tag]; const inner = walk(n);
+      if (!t) { out += inner; continue; }
+      const al = n.getAttribute('data-a'); const attr = (t === 'p' || t === 'h2' || t === 'h3') && (al === 'c' || al === 'r') ? ` data-a="${al}"` : '';
+      out += `<${t}${attr}>${inner}</${t}>`;
+    }
+    return out;
+  };
+  return walk(doc.body);
+}
+const textToHtml = (t) => String(t || '').split('\n').map(l => `<p>${esc(l) || '<br>'}</p>`).join('');
+const imgAttrs = (n) => { const w = n.getAttribute('data-w'), a = n.getAttribute('data-a'); return (w === 's' || w === 'm' ? ` data-w="${w}"` : '') + (a === 'l' || a === 'r' ? ` data-a="${a}"` : ''); };
+function bodyHtml(p) {
+  const photos = p.photos || []; const used = new Set();
+  const pic = (x, i, extra) => `<img class="cm-photo" src="${esc(x.url)}" alt="" loading="lazy" data-act="view" data-i="${i}"${extra || ''} ${x.w && x.h ? `style="aspect-ratio:${x.w}/${x.h}"` : ''}>`;
+  let h = '';
+  if (p.bodyHtml) {
+    const inner = cleanHtml(p.bodyHtml, (n) => { const i = photos.findIndex(x => x.id === n.getAttribute('data-photo')); if (i < 0 || used.has(i)) return ''; used.add(i); return pic(photos[i], i, imgAttrs(n)); });
+    h = `<div class="cm-body rich">${inner}</div>`;
+  } else if (p.body) h = `<div class="cm-body">${esc(p.body)}</div>`;
+  return h + photos.map((x, i) => (used.has(i) ? '' : pic(x, i))).join('');
+}
 function postHtml(p) {
   const place = placeText(p);
   return `<div class="cm-post"><div class="cm-tags"><span class="cm-tag b-${esc(p.board)}">${esc(boardName(p.board))}</span>${place ? `<span class="cm-tag">${esc(place)}</span>` : ''}${p.hidden ? `<span class="cm-tag warn">${esc(tr('가려진 글'))}</span>` : ''}</div>
@@ -318,8 +356,7 @@ function postHtml(p) {
     <div class="cm-author"><span class="cm-ava">${esc((p.author.name || '?').slice(0, 1))}</span><div><b>${esc(p.author.name || tr('이름 없음'))}</b><span>${esc(ago(p.createdAt))}${p.updatedAt !== p.createdAt ? ' · ' + esc(tr('고침')) : ''}</span></div></div>
     ${p.hidden ? `<div class="cm-note">${esc(tr('신고가 여러 번 들어와 다른 사람에게는 보이지 않아요. 문의: {m}', { m: (ST.meta && ST.meta.contact) || 'hi@hueeng.com' }))}</div>` : ''}
     ${p.when ? `<div class="cm-when">${esc(tr('여행 날짜'))} · ${esc(rangeText(p.when.start, p.when.end))}</div>` : ''}
-    ${p.body ? `<div class="cm-body">${esc(p.body)}</div>` : ''}
-    ${(p.photos || []).map((x, i) => `<img class="cm-photo" src="${esc(x.url)}" alt="" loading="lazy" data-act="view" data-i="${i}" ${x.w && x.h ? `style="aspect-ratio:${x.w}/${x.h}"` : ''}>`).join('')}
+    ${bodyHtml(p)}
     ${p.attach ? (p.attach.kind === 'plan' ? planCard(p.attach, p) : recordCard(p.attach)) : ''}
     <div class="cm-react"><button type="button" class="cm-like ${p.liked ? 'on' : ''}" data-act="like" aria-pressed="${p.liked ? 'true' : 'false'}">${p.liked ? IC.heartOn : IC.heart}<span>${esc(tr('좋아요'))}</span><b id="cm-likes">${p.likes}</b></button></div>
     <div class="cm-sub" id="cm-cmt-title">${esc(tr('댓글 {n}', { n: p.comments }))}</div>
@@ -418,8 +455,8 @@ ACT.import = () => {
 };
 
 // ---------- 글쓰기 ----------
-const newDraft = (board) => ({ id: null, board: board || 'free', region: '', sub: '', title: '', body: '', photos: [], attach: null, when: { start: '', end: '' }, busy: false, sig: '' });
-const draftSig = (d) => JSON.stringify([d.board, d.region, d.sub, d.title, d.body, d.photos.map(x => x.id || x.key), d.attach ? [d.attach.kind, d.attach.title || (d.attach.doc && d.attach.doc.id)] : null, d.when]);
+const newDraft = (board) => ({ id: null, board: board || 'free', region: '', sub: '', title: '', body: '', html: '', photos: [], attach: null, when: { start: '', end: '' }, busy: false, sig: '' });
+const draftSig = (d) => JSON.stringify([d.board, d.region, d.sub, d.title, d.body, d.html, d.photos.map(x => x.id || x.key), d.attach ? [d.attach.kind, d.attach.title || (d.attach.doc && d.attach.doc.id)] : null, d.when]);
 const draftDirty = () => !!ST.draft && !ST.draft.busy && draftSig(ST.draft) !== ST.draft.sig;
 async function askLeave() {
   const ok = await H.askConfirm(tr('쓰던 글을 버릴까요?'), tr('지금 나가면 쓰던 내용이 사라져요.'), tr('버리기'), true); lock();
@@ -430,7 +467,7 @@ ACT.write = () => needWriter(() => {
 });
 ACT['post-edit'] = () => {
   const p = ST.post; if (!p) return; closeSheet();
-  const d = newDraft(p.board); Object.assign(d, { id: p.id, region: p.region, sub: p.sub, title: p.title, body: p.body || '', photos: (p.photos || []).map(x => ({ id: x.id, url: x.url, state: 'done' })), attach: p.attach || null, when: p.when ? { start: p.when.start, end: p.when.end } : { start: '', end: '' } });
+  const d = newDraft(p.board); Object.assign(d, { id: p.id, region: p.region, sub: p.sub, title: p.title, body: p.body || '', html: p.bodyHtml ? cleanHtml(p.bodyHtml, (n) => { const x = (p.photos || []).find(y => y.id === n.getAttribute('data-photo')); return x ? `<img class="cm-ed-photo" data-key="${esc(x.id)}" src="${esc(x.url)}" alt=""${imgAttrs(n)}>` : ''; }) : textToHtml(p.body || ''), photos: (p.photos || []).map(x => ({ id: x.id, key: x.id, url: x.url, state: 'done' })), attach: p.attach || null, when: p.when ? { start: p.when.start, end: p.when.end } : { start: '', end: '' } });
   d.sig = draftSig(d); ST.draft = d; show('write');
 };
 function subOptions(d) {
@@ -449,26 +486,146 @@ function attachHtml(d) {
   }
   return `<div class="cm-attbtns"><button type="button" class="chip" data-act="att-plan">${IC.plan}${esc(tr('여행 일정 붙이기'))}</button><button type="button" class="chip" data-act="att-record">${IC.record}${esc(tr('여행 기록 붙이기'))}</button></div>`;
 }
+// 글쓰기 화면: 위(게시판·지역·날짜) · 본문(제목 · 서식 줄 · 본문 · 사진) · 붙이기. 넓은 화면(PC)에서는 본문이 왼쪽, 나머지가 오른쪽 기둥으로 간다(community.css).
+const ED_TOOLS = [['bold', '굵게', '<b>B</b>'], ['italic', '기울임', '<i>I</i>'], ['underline', '밑줄', '<u>U</u>'], ['strikeThrough', '취소선', '<s>S</s>'], ['|'],
+  ['h2', '제목|ed', svg('<path d="M5 5v14M13 5v14M5 12h8M17 10.500l2.500-1.500v10"/>')], ['ul', '목록', svg('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.500" cy="6" r="1"/><circle cx="4.500" cy="12" r="1"/><circle cx="4.500" cy="18" r="1"/>')],
+  ['ol', '번호 목록', svg('<path d="M10 6h10M10 12h10M10 18h10M4 4.500l1.500-.500v4M3.800 14.500c1-1.200 2.700-.800 2.700.400 0 1-1.500 1.700-2.700 3.100h2.900"/>')], ['quote', '인용', svg('<path d="M6 17c2-1 3-3 3-6V7H5v5h3M15 17c2-1 3-3 3-6V7h-4v5h3"/>')],
+  ['center', '가운데 정렬', svg('<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>')], ['|'],
+  ['table', '표', svg('<rect x="3.500" y="5" width="17" height="14" rx="2"/><path d="M3.500 10h17M3.500 14.500h17M9.500 5v14M15 5v14"/>')], ['hr', '구분선', svg('<path d="M4 12h16"/><path d="M8 7h8M8 17h8" opacity=".35"/>')], ['photo', '사진 넣기', IC.photo]];
+const ED = { range: null, pick: null };   // range: 본문에서 마지막으로 있던 자리(서식 단추를 눌러도 잃지 않게), pick: 고른 사진
+const edEl = () => $('#cm-w-body');
+const edTop = (n) => { const ed = edEl(); while (n && n.parentNode !== ed) n = n.parentNode; return n; };   // 본문 바로 아래의 덩어리(문단·표·사진)
+const edInside = (n) => { const ed = edEl(); return !!(ed && n && (n === ed || ed.contains(n))); };
+function edSave() { const sel = root.getSelection && root.getSelection(); if (sel && sel.rangeCount && edInside(sel.anchorNode)) ED.range = sel.getRangeAt(0).cloneRange(); }
+function edRestore() {
+  const ed = edEl(); if (!ed) return; ed.focus({ preventScroll: true }); const sel = root.getSelection(); if (!sel) return;
+  if (ED.range && edInside(ED.range.startContainer)) { sel.removeAllRanges(); sel.addRange(ED.range); }
+  else { const r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
+}
+const edNode = () => { const sel = root.getSelection(); let n = sel && sel.rangeCount ? sel.anchorNode : null; if (n && n.nodeType === 3) n = n.parentNode; return edInside(n) ? n : null; };
+const edUp = (tags) => { let n = edNode(); const ed = edEl(); while (n && n !== ed) { if (tags.indexOf(n.tagName) >= 0) return n; n = n.parentNode; } return null; };
+function edCaretIn(el) { const r = document.createRange(); r.selectNodeContents(el); r.collapse(true); const sel = root.getSelection(); sel.removeAllRanges(); sel.addRange(r); edSave(); }
+/** 본문 맨 위 층에 덩어리(표·사진·구분선)를 넣는다: 지금 있는 덩어리 바로 아래. 뒤에 글 쓸 줄이 없으면 하나 만든다 */
+function edInsertBlock(node) {
+  const ed = edEl(); const cur = edTop(edNode()); if (cur && cur !== ed) { if (cur.tagName === 'P' && !cur.textContent.trim() && !cur.querySelector('img')) ed.replaceChild(node, cur); else ed.insertBefore(node, cur.nextSibling); } else ed.appendChild(node);
+  let nx = node.nextElementSibling; if (!nx || nx.tagName !== 'P') { nx = document.createElement('p'); nx.innerHTML = '<br>'; ed.insertBefore(nx, node.nextSibling); }
+  return nx;
+}
+function edSync() {   // 본문 → 초안(html · 글자)
+  const d = ST.draft, ed = edEl(); if (!d || !ed) return; d.html = ed.innerHTML; d.body = (ed.innerText || '').replace(/ /g, ' ').trim();
+  ed.classList.toggle('empty', !d.body && !ed.querySelector('img,table,hr,li'));
+  const n = $('#cm-w-count'); if (n) { const max = limit('body', 5000); n.textContent = d.body.length + '/' + max; n.classList.toggle('over', d.body.length > max); }
+}
+function edCtx() {   // 표 안이면 표 도구, 사진을 골랐으면 사진 도구
+  const box = $('#cm-ed-ctx'); if (!box) return; const ed = edEl();
+  $$('.cm-ed-photo.on', ed).forEach(x => x.classList.remove('on'));
+  const b = (c, name, body) => `<button type="button" data-act="ed" data-c="${c}" aria-label="${esc(tr(name))}">${body || esc(tr(name))}</button>`;
+  if (ED.pick && ed.contains(ED.pick)) {
+    ED.pick.classList.add('on'); const w = ED.pick.getAttribute('data-w') || 'l', a = ED.pick.getAttribute('data-a') || 'c'; const on = (x, y) => (x === y ? ' class="on"' : '');
+    box.innerHTML = `<span class="cm-ed-ctxk">${esc(tr('사진'))}</span>${b('ph-up', '위로', svg('<path d="M12 19V5M6 11l6-6 6 6"/>'))}${b('ph-down', '아래로', svg('<path d="M12 5v14M6 13l6 6 6-6"/>'))}<i></i>`
+      + [['s', '작게'], ['m', '중간'], ['l', '크게']].map(([k, n]) => `<button type="button" data-act="ed" data-c="ph-w" data-v="${k}"${on(w, k)}>${esc(tr(n))}</button>`).join('') + '<i></i>'
+      + [['l', '왼쪽'], ['c', '가운데'], ['r', '오른쪽']].map(([k, n]) => `<button type="button" data-act="ed" data-c="ph-a" data-v="${k}"${on(a, k)}>${esc(tr(n))}</button>`).join('') + '<i></i>' + b('ph-out', '본문에서 빼기');
+    box.hidden = false; return;
+  }
+  ED.pick = null;
+  if (edUp(['TD', 'TH'])) { box.innerHTML = `<span class="cm-ed-ctxk">${esc(tr('표'))}</span>${b('row+', '줄 추가')}${b('col+', '칸 추가')}${b('row-', '줄 지우기')}${b('col-', '칸 지우기')}<i></i>${b('table-', '표 지우기')}`; box.hidden = false; return; }
+  box.hidden = true; box.innerHTML = '';
+}
+function edCmd(c, v) {
+  const ed = edEl(); if (!ed) return; const X = (name, arg) => { try { document.execCommand(name, false, arg); } catch (e) { /* ignore */ } };
+  if (c.slice(0, 3) === 'ph-') {   // 고른 사진: 자리 · 크기 · 정렬
+    const im = ED.pick; if (!im || !ed.contains(im)) return;
+    if (c === 'ph-up') { const pv = im.previousElementSibling; if (pv) ed.insertBefore(im, pv); }
+    else if (c === 'ph-down') { const nx = im.nextElementSibling; if (nx) ed.insertBefore(im, nx.nextSibling); }
+    else if (c === 'ph-w') { if (v === 'l') im.removeAttribute('data-w'); else im.setAttribute('data-w', v); }
+    else if (c === 'ph-a') { if (v === 'c') im.removeAttribute('data-a'); else im.setAttribute('data-a', v); }
+    else if (c === 'ph-out') { im.remove(); ED.pick = null; }
+    if (ED.pick && ED.pick.scrollIntoView) ED.pick.scrollIntoView({ block: 'nearest' });
+    edSync(); edCtx(); return;
+  }
+  edRestore();
+  if (c === 'bold' || c === 'italic' || c === 'underline' || c === 'strikeThrough') X(c);
+  else if (c === 'ul') X('insertUnorderedList'); else if (c === 'ol') X('insertOrderedList');
+  else if (c === 'h2') X('formatBlock', edUp(['H2']) ? 'p' : 'h2');
+  else if (c === 'quote') X('formatBlock', edUp(['BLOCKQUOTE']) ? 'p' : 'blockquote');
+  else if (c === 'center') { const b = edUp(['P', 'H2', 'H3']) || (X('formatBlock', 'p'), edUp(['P'])); if (b) { if (b.getAttribute('data-a') === 'c') b.removeAttribute('data-a'); else b.setAttribute('data-a', 'c'); } }
+  else if (c === 'hr') { const nx = edInsertBlock(document.createElement('hr')); edCaretIn(nx); }
+  else if (c === 'table') {
+    if (edUp(['TABLE'])) { toast(tr('표 안에는 표를 넣을 수 없어요.')); return; }
+    const t = document.createElement('table'); t.innerHTML = '<tbody>' + '<tr><th><br></th><th><br></th><th><br></th></tr>' + '<tr><td><br></td><td><br></td><td><br></td></tr>'.repeat(2) + '</tbody>';
+    edInsertBlock(t); edCaretIn(t.querySelector('th'));
+  } else if (c === 'photo') { ACT['ph-add'](); return; }
+  else {   // 표 도구
+    const cell = edUp(['TD', 'TH']); const tr0 = cell && cell.parentNode; const table = cell && cell.closest('table'); if (!table) return;
+    const rows = Array.from(table.querySelectorAll('tr')); const ci = Array.prototype.indexOf.call(tr0.children, cell);
+    if (c === 'row+') { if (rows.length >= 30) return; const nr = document.createElement('tr'); nr.innerHTML = '<td><br></td>'.repeat(tr0.children.length); tr0.parentNode.insertBefore(nr, tr0.nextSibling); edCaretIn(nr.children[Math.min(ci, nr.children.length - 1)]); }
+    else if (c === 'col+') { if (tr0.children.length >= 8) return; for (const r of rows) { const nc = document.createElement(r.children[0] && r.children[0].tagName === 'TH' ? 'th' : 'td'); nc.innerHTML = '<br>'; r.insertBefore(nc, r.children[ci] ? r.children[ci].nextSibling : null); } }
+    else if (c === 'row-') { if (rows.length <= 1) table.remove(); else { const to = tr0.nextElementSibling || tr0.previousElementSibling; tr0.remove(); if (to && to.children[0]) edCaretIn(to.children[Math.min(ci, to.children.length - 1)]); } }
+    else if (c === 'col-') { if (tr0.children.length <= 1) table.remove(); else { for (const r of rows) if (r.children[ci]) r.children[ci].remove(); edCaretIn(tr0.children[Math.min(ci, tr0.children.length - 1)]); } }
+    else if (c === 'table-') table.remove();
+  }
+  edSave(); edSync(); edCtx(); edMarks();
+}
+function edMarks() {   // 서식 단추에 지금 상태를 표시
+  const st = (n) => { try { return document.queryCommandState(n); } catch (e) { return false; } };
+  const on = { bold: st('bold'), italic: st('italic'), underline: st('underline'), strikeThrough: st('strikeThrough'), ul: !!edUp(['UL']), ol: !!edUp(['OL']), h2: !!edUp(['H2']), quote: !!edUp(['BLOCKQUOTE']), center: (edUp(['P', 'H2', 'H3']) || { getAttribute: () => '' }).getAttribute('data-a') === 'c' };
+  $$('#cm-ed-bar button').forEach(b => b.classList.toggle('on', !!on[b.dataset.c]));
+}
+ACT.ed = (v) => edCmd(v.c, v.v);
+/** 올린 사진을 본문에 넣는다(지금 글 쓰던 자리 아래) */
+function edAddPhoto(item) {
+  const ed = edEl(); if (!ed || !item) return; if (ed.querySelector(`img[data-key="${item.key}"]`)) return;
+  edRestore(); const im = document.createElement('img'); im.className = 'cm-ed-photo'; im.setAttribute('data-key', item.key); im.alt = ''; im.src = item.local || item.url || '';
+  const nx = edInsertBlock(im); edCaretIn(nx); edSync();
+}
+/** 보낼 본문: 허용한 것만 남기고, 사진은 올라간 것만 <img data-photo="id"> 로 */
+function edOut(d) {
+  return cleanHtml(d.html, (n) => { const x = d.photos.find(y => y.key === n.getAttribute('data-key')); return x && x.state === 'done' && x.id ? `<img data-photo="${esc(x.id)}"${imgAttrs(n)}>` : ''; });
+}
 SCREENS.write = () => {
   const d = ST.draft; if (!d) return { title: '', html: '' };
+  const tools = ED_TOOLS.map(([c, name, body]) => (c === '|' ? '<i></i>' : `<button type="button" data-act="ed" data-c="${c}" aria-label="${esc(tr(name))}" title="${esc(tr(name))}">${body}</button>`)).join('');
   const html = `<div class="cm-write">
+    <div class="cm-w-meta">
     <div class="cm-flabel">${esc(tr('게시판'))}</div><div class="cm-chips" id="cm-w-board">${BOARDS.map(([k, n]) => `<button type="button" class="chip ${d.board === k ? 'active' : ''}" data-act="w-board" data-v="${k}" ${d.id ? 'disabled' : ''}>${esc(tr(n))}</button>`).join('')}</div>
     <p class="cm-boardhint" id="cm-w-hint">${esc(tr(BOARD_HINT[d.board]))}</p>
     <div class="cm-flabel" id="cm-w-rlabel">${esc(d.board === 'brag' ? tr('지역') : tr('지역(안 골라도 돼요)'))}</div>
     <div class="cm-chips small" id="cm-w-region">${regions().map(r => `<button type="button" class="chip ${d.region === r.id ? 'active' : ''}" data-act="w-region" data-v="${r.id}">${esc(rname(r.id))}</button>`).join('')}</div>
     <div class="field" id="cm-w-subbox" ${d.region && (regionOf(d.region) || { subs: [] }).subs.length ? '' : 'hidden'}><select id="cm-w-sub">${subOptions(d)}</select></div>
     <div id="cm-w-whenbox" ${d.board === 'mate' ? '' : 'hidden'}><div class="cm-flabel">${esc(tr('여행 날짜(정해졌으면)'))}</div><div class="cm-dates"><div class="field"><input id="cm-w-d1" type="date" value="${esc(d.when.start)}" aria-label="${esc(tr('가는 날'))}"></div><div class="field"><input id="cm-w-d2" type="date" value="${esc(d.when.end)}" aria-label="${esc(tr('오는 날'))}"></div></div></div>
-    <div class="field"><input id="cm-w-title" maxlength="${limit('title', 60)}" autocomplete="off" placeholder="${esc(tr('제목'))}" value="${esc(d.title)}"></div>
-    <div class="field"><textarea id="cm-w-body" rows="7" maxlength="${limit('body', 5000)}" placeholder="${esc(tr('내용을 적어 주세요'))}">${esc(d.body)}</textarea></div>
+    </div>
+    <div class="cm-w-main">
+    <input id="cm-w-title" class="cm-w-title" maxlength="${limit('title', 60)}" autocomplete="off" placeholder="${esc(tr('제목'))}" value="${esc(d.title)}">
+    <div class="cm-ed-box"><div class="cm-ed-bar" id="cm-ed-bar" role="toolbar" aria-label="${esc(tr('글 꾸미기'))}">${tools}</div>
+    <div class="cm-ed-ctx" id="cm-ed-ctx" hidden></div>
+    <div id="cm-w-body" class="cm-ed cm-body rich" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${esc(tr('내용'))}" data-ph="${esc(tr('내용을 적어 주세요'))}">${d.html || '<p><br></p>'}</div>
+    <div class="cm-ed-foot"><span>${esc(tr('사진을 누르면 자리와 크기를 바꿀 수 있어요.'))}</span><b id="cm-w-count"></b></div></div>
     <div class="cm-flabel">${esc(tr('사진'))}</div><div class="cm-phs" id="cm-w-photos">${photosHtml(d)}</div>
+    </div>
+    <div class="cm-w-extra">
     <div class="cm-flabel">${esc(tr('붙이기'))}</div><div id="cm-w-attach">${attachHtml(d)}</div>
-    <p class="caption">${esc(tr('사진의 위치 정보는 올리기 전에 지워져요. 여행 기록은 제목과 들른 곳 이름만 올라가요.'))}</p></div>`;
+    <p class="caption">${esc(tr('사진의 위치 정보는 올리기 전에 지워져요. 여행 기록은 제목과 들른 곳 이름만 올라가요.'))}</p></div></div>`;
   return { title: d.id ? tr('글 고치기') : tr('글쓰기'), html, bar: `<button type="button" class="btn primary" id="cm-w-submit" data-act="w-submit">${esc(d.id ? tr('고쳐서 올리기') : tr('올리기'))}</button>`,
     after: () => {
-      const on = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, () => f(el)); };
-      on('#cm-w-title', 'input', (el) => { d.title = el.value; }); on('#cm-w-body', 'input', (el) => { d.body = el.value; });
+      const on = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, (e) => f(el, e)); };
+      on('#cm-w-title', 'input', (el) => { d.title = el.value; });
       on('#cm-w-sub', 'change', (el) => { d.sub = el.value; }); on('#cm-w-d1', 'change', (el) => { d.when.start = el.value; }); on('#cm-w-d2', 'change', (el) => { d.when.end = el.value; });
       for (const sel of ['#cm-w-board .chip.active', '#cm-w-region .chip.active']) { const c = $(sel); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+      // 본문(서식 편집기)
+      ED.range = null; ED.pick = null; try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* ignore */ }
+      const ed = edEl(); if (!ed) return;
+      const track = () => { edSave(); edMarks(); if (ED.pick && root.getSelection && !root.getSelection().isCollapsed) ED.pick = null; edCtx(); };
+      ed.addEventListener('input', () => { if (!ed.firstChild) ed.innerHTML = '<p><br></p>'; edSync(); track(); });
+      ed.addEventListener('keyup', track); ed.addEventListener('mouseup', track); ed.addEventListener('focus', track); ed.addEventListener('blur', edSave);
+      ed.addEventListener('click', (e) => { const t = e.target; ED.pick = t && t.tagName === 'IMG' ? t : null; edCtx(); edMarks(); });
+      ed.addEventListener('paste', (e) => {   // 붙여 넣기는 글자만(다른 곳의 서식·그림을 들이지 않는다)
+        const t = e.clipboardData && e.clipboardData.getData('text/plain'); if (t == null) return; e.preventDefault();
+        try { document.execCommand('insertText', false, t); } catch (x) { /* ignore */ }
+      });
+      ed.addEventListener('drop', (e) => e.preventDefault());
+      // 서식 단추를 눌러도 본문의 선택이 풀리지 않게
+      for (const id of ['#cm-ed-bar', '#cm-ed-ctx']) { const b = $(id); if (b) b.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); }); }
+      edSync();
     } };
 };
 ACT['w-board'] = (v, el) => {
@@ -519,8 +676,8 @@ async function addFiles(files) {
   if ((files || []).length > list.length) toast(tr('사진은 {n}장까지 넣을 수 있어요.', { n: limit('photos', 6) }));
   for (const f of list) {
     const item = { key: 'k' + Date.now() + Math.random().toString(36).slice(2, 6), state: 'up', local: '' }; d.photos.push(item);
-    try { const blob = await toJpeg(f); item.local = URL.createObjectURL(blob); paintPhotos(); const j = await upload(blob); item.id = j.id; item.url = j.url; item.state = 'done'; }
-    catch (e) { item.state = 'fail'; log('photo failed: ' + (e && (e.code || e.message))); toast(errText(e)); if (e && e.code === 'terms_required') { ST.me = null; } }
+    try { const blob = await toJpeg(f); item.local = URL.createObjectURL(blob); paintPhotos(); if (ST.draft === d) edAddPhoto(item); const j = await upload(blob); item.id = j.id; item.url = j.url; item.state = 'done'; }
+    catch (e) { item.state = 'fail'; { const im = edEl() && edEl().querySelector(`img[data-key="${item.key}"]`); if (im) { im.remove(); edSync(); } } log('photo failed: ' + (e && (e.code || e.message))); toast(errText(e)); if (e && e.code === 'terms_required') { ST.me = null; } }
     if (ST.draft === d) paintPhotos();
   }
 }
@@ -528,7 +685,7 @@ ACT['ph-add'] = () => {
   if (!fileInput) { fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.multiple = true; fileInput.id = 'cm-file'; fileInput.hidden = true; document.body.appendChild(fileInput); fileInput.addEventListener('change', () => { const fs = Array.from(fileInput.files || []); fileInput.value = ''; addFiles(fs); }); }
   fileInput.click();
 };
-ACT['ph-del'] = (v) => { const d = ST.draft; if (!d) return; const x = d.photos[+v.i]; if (x && x.local) { try { URL.revokeObjectURL(x.local); } catch (e) { /* ignore */ } } d.photos.splice(+v.i, 1); paintPhotos(); };
+ACT['ph-del'] = (v) => { const d = ST.draft; if (!d) return; const x = d.photos[+v.i]; if (x && x.local) { try { URL.revokeObjectURL(x.local); } catch (e) { /* ignore */ } } d.photos.splice(+v.i, 1); paintPhotos(); { const im = x && edEl() && edEl().querySelector(`img[data-key="${x.key}"]`); if (im) { im.remove(); if (ED.pick === im) ED.pick = null; edSync(); edCtx(); } } };
 ACT['att-del'] = () => { if (ST.draft) { ST.draft.attach = null; paintAttach(); } };
 ACT['att-plan'] = () => {
   const trips = (root.Planner && root.Planner.tripsBrief) ? root.Planner.tripsBrief() : [];
@@ -559,14 +716,15 @@ ACT['att-record-ok'] = (v) => {
 };
 ACT['w-submit'] = async () => {
   const d = ST.draft; if (!d || d.busy) return;
-  const title = d.title.trim(), body = d.body.trim();
+  edSync(); const title = d.title.trim(), body = d.body.trim();
   if (!title) { toast(tr('제목을 적어 주세요.')); const ti = $('#cm-w-title'); if (ti) ti.focus(); return; }
   if (d.board === 'brag' && !d.region) { toast(tr('지역을 골라 주세요.')); return; }
   if (d.board === 'plan' && !(d.attach && d.attach.kind === 'plan')) { toast(tr('나눌 여행 일정을 붙여 주세요.')); return; }
   if (d.photos.some(x => x.state === 'up')) { toast(tr('사진을 올리는 중이에요. 잠시만 기다려 주세요.')); return; }
   const photos = d.photos.filter(x => x.state === 'done' && x.id).map(x => x.id);
   if (!body && !photos.length && !d.attach) { toast(tr('내용을 적어 주세요.')); return; }
-  const payload = { board: d.board, title, body, region: d.region, sub: d.sub, photos, attach: d.attach, when: d.board === 'mate' && d.when.start ? d.when : null, lang: LANG() };
+  if (body.length > limit('body', 5000)) { toast(tr('글이 너무 길어요. {n}자까지 쓸 수 있어요.', { n: limit('body', 5000) })); return; }
+  const payload = { board: d.board, title, body, bodyHtml: edOut(d), region: d.region, sub: d.sub, photos, attach: d.attach, when: d.board === 'mate' && d.when.start ? d.when : null, lang: LANG() };
   d.busy = true; const btn = $('#cm-w-submit'); if (btn) { btn.disabled = true; btn.textContent = tr('올리는 중…'); }
   try {
     const j = d.id ? await api('PUT', '/community/posts/' + d.id, payload) : await api('POST', '/community/posts', payload);
@@ -621,7 +779,7 @@ const Community = {
   compose(o) {
     o = o || {};
     needWriter(() => {
-      const d = newDraft(BOARDS.some(b => b[0] === o.board) ? o.board : 'free'); d.title = String(o.title || '').slice(0, limit('title', 60)); d.body = String(o.body || '').slice(0, limit('body', 5000));
+      const d = newDraft(BOARDS.some(b => b[0] === o.board) ? o.board : 'free'); d.title = String(o.title || '').slice(0, limit('title', 60)); d.body = String(o.body || '').slice(0, limit('body', 5000)); d.html = d.body ? textToHtml(d.body) : '';
       d.sig = draftSig(newDraft(d.board)); ST.draft = d; show('write');   // 빈 글과 견줘 '쓰던 글'로 본다(나갈 때 물어본다)
       if (o.files && o.files.length) addFiles(o.files);
     });

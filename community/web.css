@@ -56,6 +56,7 @@ textarea, select { font: inherit; color: inherit; }
 .cm-attbtns { display: none; }
 .cm-flabel:has(+ #cm-w-attach > .cm-attbtns) { display: none; }
 #cm-w-board .chip[data-v="plan"]:not(.active) { display: none; }
+@media (min-width: 900px) { .cm-w-extra { border: 0; padding: 0 4px; margin-top: 10px; } }   /* 웹에서는 붙이기가 없어 안내 한 줄만 남는다 */
 
 /* ---------- 마우스로 볼 때 ---------- */
 @media (hover: hover) and (pointer: fine) {
