@@ -80,7 +80,9 @@ h2{font-size:clamp(30px,4.1vw,46px);line-height:1.22;letter-spacing:-.035em;font
 
 /* 폰 테두리 */
 .phone{--pw:300px;position:relative;width:var(--pw);padding:calc(var(--pw)*.026);border-radius:calc(var(--pw)*.146);background:var(--bezel);box-shadow:inset 0 0 0 1.5px var(--bezel-edge),0 2px 4px rgba(10,20,40,.12),0 40px 64px -30px rgba(20,50,110,.5)}
-.phone img{width:100%;border-radius:calc(var(--pw)*.12);background:#fff}
+/* 캡처에는 상태 표시줄이 없어 화면이 테두리 꼭대기에 붙는다 → 위에 흰 여백(상태 표시줄 자리)을 두고 다이내믹 아일랜드를 그린다 */
+.phone img{width:100%;padding-top:calc(var(--pw)*.105);border-radius:calc(var(--pw)*.12);background:#fff}
+.phone::before{content:"";position:absolute;z-index:1;left:50%;top:calc(var(--pw)*.052);width:calc(var(--pw)*.29);height:calc(var(--pw)*.078);margin-left:calc(var(--pw)*-.145);border-radius:999px;background:var(--bezel)}
 .hero-art .phone{position:absolute}
 .phone-main{--pw:310px;left:6%;top:92px;z-index:2}
 .phone-back{--pw:266px;left:52%;top:46px;z-index:1;transform:rotate(5deg)}
@@ -168,8 +170,10 @@ h2{font-size:clamp(30px,4.1vw,46px);line-height:1.22;letter-spacing:-.035em;font
 .gallery-hint{font-size:14px;color:var(--ink-3)}
 .gallery{overflow-x:auto;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding:8px 0 28px}
 .gallery-track{display:flex;gap:18px;width:max-content;padding:0 max(var(--gutter),calc((100vw - 1168px)/2 + var(--gutter)))}
-.gallery-track li{flex:none;width:236px;scroll-snap-align:center;padding:7px;border-radius:36px;background:var(--bezel);box-shadow:inset 0 0 0 1.5px var(--bezel-edge),0 24px 40px -28px rgba(20,50,110,.5)}
-.gallery-track img{width:100%;border-radius:30px;background:#fff}
+
+.gallery-track li{position:relative;flex:none;width:236px;scroll-snap-align:center;padding:7px;border-radius:36px;background:var(--bezel);box-shadow:inset 0 0 0 1.5px var(--bezel-edge),0 24px 40px -28px rgba(20,50,110,.5)}
+.gallery-track img{width:100%;padding-top:24px;border-radius:30px;background:#fff}
+.gallery-track li::before{content:"";position:absolute;z-index:1;left:50%;top:14px;width:66px;height:18px;margin-left:-33px;border-radius:999px;background:var(--bezel)}
 
 /* 더 있는 기능 */
 .extras{padding-top:64px}
@@ -271,7 +275,7 @@ h2{font-size:clamp(30px,4.1vw,46px);line-height:1.22;letter-spacing:-.035em;font
   .stage.tall{height:auto;padding:22px 0}
   .stage.tall .chat,.stage.tall .boards{position:relative;left:auto;top:auto;transform:none;margin:0 auto}
   .gallery-section .section-head{grid-template-columns:1fr}
-  .gallery-track li{width:200px;border-radius:32px}.gallery-track img{border-radius:26px}
+  .gallery-track li{width:200px;border-radius:32px}.gallery-track img{padding-top:21px;border-radius:26px}.gallery-track li::before{top:13px;width:56px;height:16px;margin-left:-28px}
   .info-grid{grid-template-columns:1fr}
   .dl{flex-direction:column;align-items:stretch;text-align:center}
   .faq summary{font-size:16px}
