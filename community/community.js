@@ -496,6 +496,13 @@ async function toJpeg(file) {
   let q = 0.82, blob = await toBlob(cv, q); const max = limit('photoBytes', 2097152);
   while (blob && blob.size > max && q > 0.45) { q -= 0.12; blob = await toBlob(cv, q); }
   if (!blob || blob.size > max) throw Object.assign(new Error('too large'), { code: 'too_large' });
+  // 목록용 작은 사진(긴 변 640px): 목록에서 원본(1600px)을 받지 않게 함께 올린다. 못 만들면 없이 간다(목록도 원본을 쓴다).
+  let small = null;
+  try {
+    const k2 = Math.min(1, 640 / Math.max(cv.width, cv.height)); const c2 = document.createElement('canvas'); c2.width = Math.max(1, Math.round(cv.width * k2)); c2.height = Math.max(1, Math.round(cv.height * k2));
+    c2.getContext('2d').drawImage(cv, 0, 0, c2.width, c2.height); small = await toBlob(c2, 0.72); if (small && small.size > 200000) small = null;
+  } catch (e) { small = null; }
+  blob.small = small;
   return blob;
 }
 async function upload(blob) {
@@ -504,6 +511,7 @@ async function upload(blob) {
   catch (e) { throw Object.assign(new Error('network'), { code: 'network' }); }
   let j = null; try { j = await r.json(); } catch (e) { j = null; }
   if (!r.ok) throw Object.assign(new Error((j && j.message) || 'HTTP ' + r.status), { code: (j && j.error) || 'http_' + r.status, status: r.status });
+  if (blob.small && j && j.id) fetch(A.base + '/community/photos/' + encodeURIComponent(j.id) + '/thumb', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + ((A.session && A.session.token) || '') }, body: blob.small }).then((x) => { if (!x.ok) log('thumb failed: ' + x.status); }, () => { /* 작은 사진은 없어도 된다 */ });
   return j;
 }
 async function addFiles(files) {
