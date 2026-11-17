@@ -144,6 +144,24 @@
 .cm-plan-addr, .cm-plan-stay { font-size: 13px; line-height: 18px; color: var(--text-3); overflow-wrap: anywhere; }
 .cm-plan-memo { margin-top: 2px; font-size: 14px; line-height: 20px; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-plan-day li.leg { margin-left: 10px; padding: 2px 0 2px 21px; border-left: 2px dotted var(--grey300); font-size: 12px; line-height: 18px; color: var(--text-3); }
+.cm-plan-img { flex: none; width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: var(--fill); }
+.cm-plan-photos { display: flex; gap: 8px; margin: 12px 0 2px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.cm-plan-photos::-webkit-scrollbar { display: none; }
+.cm-plan-photos figure { flex: none; width: 132px; margin: 0; }
+.cm-plan-photos img { display: block; width: 132px; height: 96px; border-radius: 12px; object-fit: cover; background: var(--fill); }
+.cm-plan-photos figcaption { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 내 여행(웹) */
+.cm-trips { list-style: none; margin: 8px 0 0; padding: 0; }
+.cm-trip { display: flex; align-items: center; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--border); cursor: pointer; color: var(--text-3); }
+.cm-trip .cm-ic { color: var(--primary); }
+.cm-trip > div { flex: 1; min-width: 0; color: var(--text); }
+.cm-trip b { display: block; font-size: 16px; line-height: 24px; overflow-wrap: anywhere; }
+.cm-trip span { display: block; font-size: 13px; line-height: 18px; color: var(--text-3); }
+.cm-mytrip-sub { margin: 2px 0 14px; font-size: 14px; color: var(--text-3); }
+.cm-mytrip-facts { list-style: none; margin: 0 0 6px; padding: 12px 16px; border-radius: 14px; background: var(--bg-grey); }
+.cm-mytrip-facts li { display: flex; gap: 12px; padding: 4px 0; font-size: 14px; line-height: 20px; }
+.cm-mytrip-facts b { flex: none; width: 64px; font-weight: 600; color: var(--text-3); }
+.cm-mytrip-facts span { min-width: 0; overflow-wrap: anywhere; }
 .cm-plan-prev { margin-top: 8px; padding: 0 14px; border: 1px solid var(--border); border-radius: 14px; }
 .cm-plan-prev > summary { padding: 11px 0; font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; }
 .cm-plan-prev .cm-plan { margin-top: 0; max-height: 46vh; overflow-y: auto; }

@@ -249,6 +249,7 @@ ACT.reload = () => { loadList(); loadMe(); };
 ACT.open = (d) => show('post', { id: +d.id });
 ACT['cm-menu'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티'))}</div><ul class="rows">
+    ${H.platform === 'web' ? `<li class="row tap" data-act="trips"><span class="cm-ic">${IC.plan}</span><div class="row-body"><div class="row-title">${esc(tr('내 여행'))}</div><div class="row-desc">${esc(tr('앱에서 만든 여행 일정 보기'))}</div></div><span class="chev"></span></li>` : ''}
     ${authed() ? `<li class="row tap" data-act="profile-edit"><span class="cm-ic">${IC.user}</span><div class="row-body"><div class="row-title">${esc(tr('프로필 설정'))}</div><div class="row-desc">${esc(tr('프로필 사진 · 닉네임 · 소개'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="points"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">${esc(tr('내 포인트'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="blocks"><span class="cm-ic">${IC.block}</span><div class="row-body"><div class="row-title">${esc(tr('차단한 사람'))}</div></div><span class="chev"></span></li>` : ''}
@@ -304,6 +305,12 @@ ACT.unblock = async (d) => { try { paintBlocks(await api('DELETE', '/community/b
 // 붙인 여행 일정을 날짜별로 자세히: 날짜마다 순서 · 시각 · 이름 · 주소 · 메모 · 머무는 시간 · 다음 곳까지의 이동. 날짜는 접었다 펼 수 있다.
 const MOVE_NAME = { walk: '걷기', subway: '지하철', bus: '버스', train: '기차', taxi: '택시', car: '자동차', plane: '비행기', ferry: '배' };
 const minText = (m) => (m >= 60 ? (m % 60 ? tr('{h}시간 {m}분', { h: Math.floor(m / 60), m: m % 60 }) : tr('{n}시간', { n: m / 60 })) : tr('{n}분', { n: m }));
+const okImg = (u) => typeof u === 'string' && /^https:\/\//.test(u);
+/** 일정에 담긴 장소 사진을 옆으로 넘겨 보는 줄(사진 아래에 장소 이름). 사진이 없으면 빈 문자열 */
+function planPhotos(d) {
+  const ps = ((d && d.items) || []).filter(x => x.kind !== 'note' && okImg(x.img)).slice(0, 12); if (!ps.length) return '';
+  return `<div class="cm-plan-photos">${ps.map(x => `<figure><img src="${esc(x.img)}" alt="" loading="lazy" referrerpolicy="no-referrer"><figcaption>${esc(x.name)}</figcaption></figure>`).join('')}</div>`;
+}
 function planDays(d) {
   const items = (d && d.items) || []; if (!items.length) return '';
   const keys = []; const by = {}; for (const it of items) { const k = it.day || ''; if (!by[k]) { by[k] = []; keys.push(k); } by[k].push(it); }
@@ -315,7 +322,7 @@ function planDays(d) {
     const rows = list.map((it) => {
       if (it.kind === 'note') return `<li class="note"><span class="cm-plan-n">·</span><div><div class="cm-plan-name">${esc(it.name)}</div>${it.memo ? `<div class="cm-plan-memo">${esc(it.memo)}</div>` : ''}</div></li>`;
       no++; const lg = it.leg; const leg = lg && (lg.mode || lg.min) ? `<li class="leg">${esc([lg.mode && MOVE_NAME[lg.mode] ? tr(MOVE_NAME[lg.mode]) : '', lg.min ? minText(lg.min) : ''].filter(Boolean).join(' · '))}</li>` : '';
-      return `<li><span class="cm-plan-n">${no}</span><div><div class="cm-plan-top"><b class="cm-plan-name">${esc(it.name)}</b>${it.time ? `<span class="cm-plan-time">${esc(it.time)}</span>` : ''}</div>${it.addr ? `<div class="cm-plan-addr">${esc(it.addr)}</div>` : ''}${it.memo ? `<div class="cm-plan-memo">${esc(it.memo)}</div>` : ''}${it.stay ? `<div class="cm-plan-stay">${esc(tr('{t} 머물기', { t: minText(it.stay) }))}</div>` : ''}</div></li>${leg}`;
+      return `<li><span class="cm-plan-n">${no}</span><div><div class="cm-plan-top"><b class="cm-plan-name">${esc(it.name)}</b>${it.time ? `<span class="cm-plan-time">${esc(it.time)}</span>` : ''}</div>${it.addr ? `<div class="cm-plan-addr">${esc(it.addr)}</div>` : ''}${it.memo ? `<div class="cm-plan-memo">${esc(it.memo)}</div>` : ''}${it.stay ? `<div class="cm-plan-stay">${esc(tr('{t} 머물기', { t: minText(it.stay) }))}</div>` : ''}</div>${okImg(it.img) ? `<img class="cm-plan-img" src="${esc(it.img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</li>${leg}`;
     }).join('');
     return `<details class="cm-plan-day" open><summary><b>${esc(a)}</b><span>${esc([b, tr('{n}곳', { n: cnt })].filter(Boolean).join(' · '))}</span></summary><ol>${rows}</ol></details>`;
   }).join('')}</div>`;
@@ -323,7 +330,7 @@ function planDays(d) {
 function planCard(a, post) {
   const d = a.doc || {}; const places = (d.items || []).filter(x => x.kind !== 'note'); const dests = (d.dests || []).map(x => x.name).filter(Boolean);
   return `<div class="cm-attcard"><div class="cm-attcard-k">${IC.plan}${esc(tr('여행 일정'))}</div><div class="cm-attcard-t">${esc(d.title || '')}</div><div class="cm-attcard-s">${esc([dests.slice(0, 4).join(', '), rangeText(d.start, d.end), tr('{n}곳', { n: places.length })].filter(Boolean).join(' · '))}</div>
-    ${planDays(d)}
+    ${planPhotos(d)}${planDays(d)}
     ${root.Planner && root.Planner.importDoc ? `<button type="button" class="btn weak" data-act="import" data-id="${post.id}">${esc(tr('내 여행에 담기'))}</button>` : ''}</div>`;
 }
 function recordCard(a) {
@@ -497,6 +504,45 @@ ACT.import = () => {
   try { root.Planner.importDoc(p.attach.doc, { post: p.id, owner: p.author.name || '' }); toast(tr('내 여행에 담았어요.')); } catch (e) { log('import failed: ' + (e && e.message)); toast(tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.')); }
 };
 
+// ---------- 내 여행(웹에서 보기) ----------
+// 앱의 여행 탭에서 만든 여행 가운데 서버에 저장된 것을 읽기만 한다(고치기는 앱에서). 일정은 붙인 일정과 같은 모양으로 보여 준다.
+const liveRecs = (a) => (Array.isArray(a) ? a.filter(x => x && !x.del) : []);
+function tripDoc(doc) {
+  const items = liveRecs(doc.items).slice().sort((a, b) => ((a.day || '9999') < (b.day || '9999') ? -1 : (a.day || '9999') > (b.day || '9999') ? 1 : (String(a.sort || '') < String(b.sort || '') ? -1 : String(a.sort || '') > String(b.sort || '') ? 1 : 0)));
+  return { title: doc.title || '', start: doc.start || '', end: doc.end || '', dests: Array.isArray(doc.dests) ? doc.dests : [],
+    items: items.filter(x => x.name).map(x => { const y = { name: x.name, day: x.day || null }; for (const k of ['time', 'memo', 'addr', 'img', 'kind']) if (x[k]) y[k] = x[k]; if (x.stay > 0 && x.stay !== 60) y.stay = x.stay; if (x.leg && (x.leg.mode || x.leg.min > 0)) y.leg = { mode: x.leg.mode, min: x.leg.min }; return y; }) };
+}
+const tripSub = (doc) => { const d = tripDoc(doc); return [d.dests.map(x => x && x.name).filter(Boolean).slice(0, 3).join(', '), rangeText(d.start, d.end), tr('{n}곳', { n: d.items.filter(x => x.kind !== 'note').length })].filter(Boolean).join(' · '); };
+SCREENS.trips = () => {
+  const L = ST.trips || { state: 'load', items: [] };
+  const body = L.state === 'load' ? `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>` : L.state === 'error' ? `<p class="cm-hint">${esc(tr('여행을 불러오지 못했어요.'))}</p><button type="button" class="btn weak" data-act="trips-reload">${esc(tr('다시 시도'))}</button>`
+    : !L.items.length ? `<div class="cm-empty"><p class="cm-hint">${esc(tr('서버에 저장된 여행이 없어요. 앱의 여행 탭에서 같은 계정으로 로그인하면 여행이 여기에도 보여요.'))}</p></div>`
+      : `<ul class="cm-trips">${L.items.map(t => `<li class="cm-trip" data-act="trip-open" data-id="${esc(t.id)}" role="button" tabindex="0"><span class="cm-ic">${IC.plan}</span><div><b>${esc(t.doc.title || tr('이름 없는 여행'))}</b><span>${esc(tripSub(t.doc))}</span>${(t.members || []).length > 1 ? `<span>${esc(tr('함께 보는 사람 {n}명', { n: t.members.length }))}</span>` : ''}</div>${IC.chev}</li>`).join('')}</ul>`;
+  return { title: tr('내 여행'), html: `<div class="cm-mytrips"><p class="cm-note">${esc(tr('앱에서 만든 여행을 여기서 볼 수 있어요. 고치기는 앱에서 해 주세요.'))}</p>${body}</div>`,
+    after: () => { if (!ST.trips) loadTrips(); } };
+};
+async function loadTrips() {
+  ST.trips = { state: 'load', items: [] };
+  try { const j = await api('GET', '/trips'); ST.trips = { state: 'ok', items: (j.trips || []).filter(t => t && t.doc) }; } catch (e) { ST.trips = { state: 'error', items: [] }; if (e && e.status === 401) { popScreen(); loginSheet(() => ACT.trips()); return; } }
+  const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'trips') renderScreen();
+}
+ACT.trips = () => needLogin(() => { closeSheet(); ST.trips = null; show('trips'); });
+ACT['trips-reload'] = () => { ST.trips = null; renderScreen(); };
+ACT['trip-open'] = (d) => show('trip', { id: d.id });
+SCREENS.trip = (p) => {
+  const t = ST.trips && ST.trips.items.find(x => x.id === p.id); if (!t) return { title: tr('내 여행'), html: `<p class="cm-hint">${esc(tr('여행을 불러오지 못했어요.'))}</p>` };
+  const doc = tripDoc(t.doc); const bk = liveRecs(t.doc.bookings);
+  const stays = bk.filter(b => b.kind === 'stay' && b.name).sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
+  const ways = bk.filter(b => b.dir === 'go' || b.dir === 'back').sort((a, b) => (a.dir === b.dir ? String(a.sort || '').localeCompare(String(b.sort || '')) : a.dir === 'go' ? -1 : 1));
+  const wayRow = (b) => `<li><b>${esc(b.dir === 'go' ? tr('가는 방법') : tr('오는 방법'))}</b><span>${esc([b.mode && MOVE_NAME[b.mode] ? tr(MOVE_NAME[b.mode]) : '', b.from || b.to ? (b.from || '…') + ' → ' + (b.to || '…') : ''].filter(Boolean).join(' · '))}</span></li>`;
+  const stayRow = (b) => `<li><b>${esc(tr('숙소'))}</b><span>${esc([b.name, rangeText(b.start, b.end), b.addr].filter(Boolean).join(' · '))}</span></li>`;
+  const html = `<div class="cm-mytrip"><h1 class="cm-post-title">${esc(doc.title || tr('이름 없는 여행'))}</h1><p class="cm-mytrip-sub">${esc(tripSub(t.doc))}</p>
+    ${ways.length || stays.length ? `<ul class="cm-mytrip-facts">${ways.map(wayRow).join('')}${stays.map(stayRow).join('')}</ul>` : ''}
+    ${doc.items.length ? planPhotos(doc) + planDays(doc) : `<p class="cm-hint">${esc(tr('아직 담은 곳이 없어요.'))}</p>`}
+    <p class="caption">${esc(tr('경비 · 일기 · 준비물은 앱에서 볼 수 있어요.'))}</p></div>`;
+  return { title: tr('내 여행'), html };
+};
+
 // ---------- 프로필 ----------
 ACT.profile = async (d) => {   // 글쓴이를 누르면: 프로필 사진 · 이름 · 소개 · 쓴 글 수
   const uid = +d.uid; if (!uid) return; let pf = null;
@@ -579,7 +625,7 @@ function photosHtml(d) {
 function attachHtml(d) {
   if (d.attach) {
     const a = d.attach; const title = a.kind === 'plan' ? (a.doc && a.doc.title) : a.title; const sub = a.kind === 'plan' ? tr('{n}곳', { n: ((a.doc && a.doc.items) || []).filter(x => x.kind !== 'note').length }) : (a.places || []).slice(0, 4).join(', ');
-    return `<div class="cm-attsel">${a.kind === 'plan' ? IC.plan : IC.record}<div><b>${esc(title || '')}</b><span>${esc([a.kind === 'plan' ? tr('여행 일정') : tr('여행 기록'), sub].filter(Boolean).join(' · '))}</span></div><button type="button" data-act="att-del" aria-label="${esc(tr('붙인 것 빼기'))}">${IC.close}</button></div>${a.kind === 'plan' ? `<details class="cm-plan-prev" open><summary>${esc(tr('올라가는 일정 보기'))}</summary>${planDays(a.doc)}</details>` : ''}`;
+    return `<div class="cm-attsel">${a.kind === 'plan' ? IC.plan : IC.record}<div><b>${esc(title || '')}</b><span>${esc([a.kind === 'plan' ? tr('여행 일정') : tr('여행 기록'), sub].filter(Boolean).join(' · '))}</span></div><button type="button" data-act="att-del" aria-label="${esc(tr('붙인 것 빼기'))}">${IC.close}</button></div>${a.kind === 'plan' ? `<details class="cm-plan-prev" open><summary>${esc(tr('올라가는 일정 보기'))}</summary>${planPhotos(a.doc)}${planDays(a.doc)}</details>` : ''}`;
   }
   return `<div class="cm-attbtns"><button type="button" class="chip" data-act="att-plan">${IC.plan}${esc(tr('여행 일정 붙이기'))}</button></div>`;
 }
@@ -846,7 +892,7 @@ function bind() {
     const el = e.target.closest('[data-act]'); if (!el || !scope.contains(el) || el.disabled) return;
     const f = ACT[el.dataset.act]; if (f) { e.preventDefault(); f(el.dataset, el, e); }
   });
-  document.addEventListener('error', (e) => { const el = e.target; if (el && el.tagName === 'IMG' && el.closest && el.closest('#cm-page, #cm-screen')) el.classList.add('fail'); }, true);
+  document.addEventListener('error', (e) => { const el = e.target; if (el && el.tagName === 'IMG' && el.closest && el.closest('#cm-page, #cm-screen')) { el.classList.add('fail'); const fig = el.closest('.cm-plan-photos figure'); if (fig) { const box = fig.parentNode; fig.remove(); if (box && !box.children.length) box.remove(); } else if (el.classList.contains('cm-plan-img')) el.remove(); } }, true);   // 불러오지 못한 장소 사진은 자리째 뺀다
   if (!root.Planner && root.visualViewport) {   // 키보드가 올라오면 보이는 영역에 맞춘다(여행 탭이 있으면 거기서 같은 일을 한다: html.pl-kb, --pl-vt, --pl-vh)
     const vv = root.visualViewport; const fit = () => { const de = document.documentElement; const kb = Math.round(root.innerHeight - vv.height - vv.offsetTop);
       if (kb > 80) { de.style.setProperty('--pl-vt', Math.max(0, Math.round(vv.offsetTop)) + 'px'); de.style.setProperty('--pl-vh', Math.round(vv.height) + 'px'); de.classList.add('pl-kb'); } else if (de.classList.contains('pl-kb')) { de.classList.remove('pl-kb'); de.style.removeProperty('--pl-vt'); de.style.removeProperty('--pl-vh'); } };
@@ -874,6 +920,8 @@ const Community = {
   openPoints() { ACT.points(); },
   /** 프로필 설정 화면(프로필 사진 · 닉네임 · 소개) — 웹의 계정 메뉴에서도 연다 */
   openProfile() { ACT['profile-edit'](); },
+  /** 내 여행(서버에 저장한 여행 읽기) — 웹의 머리 줄·계정 메뉴에서 연다 */
+  openTrips() { ACT.trips(); },
   /** 다른 화면에서 글쓰기를 연다(여행 탭의 일기를 게시판에 공유): 제목·본문·사진을 채운 글쓰기 화면. 사진은 여기서 다시 줄여 올리고, '올리기'를 눌러야 공개된다 */
   compose(o) {
     o = o || {};

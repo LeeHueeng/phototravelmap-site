@@ -201,10 +201,10 @@ function accountMenu() {
   if (!session) return; const p = PROVIDERS[session.provider];
   const row = (act, title, extra) => `<button type="button" class="row tap" data-wv="${act}"><span class="row-body"><span class="row-title">${esc(title)}</span>${extra || ''}</span><span class="chev"></span></button>`;
   openModal(`<div class="sheet-title">${esc(session.name || tr('이름 없음'))}</div>${p ? `<p class="desc">${esc(tr('{p} 계정으로 로그인했어요.', { p: tr(p) }))}</p>` : ''}
-    <div class="rows wv-rows">${row('profile', tr('프로필 설정'))}${row('nick', tr('닉네임 바꾸기'))}${row('points', tr('내 포인트'))}${row('logout', tr('로그아웃'))}
+    <div class="rows wv-rows">${row('trips', tr('내 여행'))}${row('profile', tr('프로필 설정'))}${row('nick', tr('닉네임 바꾸기'))}${row('points', tr('내 포인트'))}${row('logout', tr('로그아웃'))}
       <button type="button" class="row tap" data-wv="delete"><span class="row-body"><span class="row-title danger">${esc(tr('회원 탈퇴'))}</span><span class="row-desc">${esc(tr('계정과 글·댓글·사진·포인트가 모두 지워져요.'))}</span></span><span class="chev"></span></button></div>
     <button type="button" class="btn secondary" data-wv="cancel">${esc(tr('닫기'))}</button>`,
-  (v) => { if (v === 'profile') root.Community.openProfile(); else if (v === 'nick') askNickname(false); else if (v === 'points') root.Community.openPoints(); else if (v === 'logout') { logout(); toast(tr('로그아웃했어요.')); reloadList(); } else if (v === 'delete') deleteAccount(); });
+  (v) => { if (v === 'trips') root.Community.openTrips(); else if (v === 'profile') root.Community.openProfile(); else if (v === 'nick') askNickname(false); else if (v === 'points') root.Community.openPoints(); else if (v === 'logout') { logout(); toast(tr('로그아웃했어요.')); reloadList(); } else if (v === 'delete') deleteAccount(); });
 }
 /** 회원 탈퇴: 무엇이 지워지는지 알리고 확인을 받은 뒤 서버에서 계정을 지운다(앱의 설정 › 회원 탈퇴와 같은 일) */
 async function deleteAccount() {
@@ -326,6 +326,7 @@ async function boot() {
   paintAccount();
   document.querySelectorAll('#wv-langs a[data-lang]').forEach((a) => { const u = new URL(location.origin + ROOT + location.search); u.searchParams.delete('post'); u.searchParams.set('lang', a.dataset.lang); a.href = u.pathname + u.search; if (a.dataset.lang === I18N.lang) a.setAttribute('aria-current', 'true'); });
   const skip = $('.wv-skip'); if (skip) skip.addEventListener('click', (e) => { e.preventDefault(); const t = $('#cm-page'); if (t) { t.setAttribute('tabindex', '-1'); t.focus(); } });
+  { const tl = $('#wv-trips'); if (tl) tl.addEventListener('click', (e) => { e.preventDefault(); root.Community.openTrips(); }); }
   $('#wv-account').addEventListener('click', (e) => { const el = e.target.closest('[data-wv]'); if (!el) return; if (el.dataset.wv === 'login') loginDialog(); else accountMenu(); });
   $('#wv-modal').addEventListener('click', (e) => {
     if (e.target.id === 'wv-modal-dim') { closeModal(null); return; }
