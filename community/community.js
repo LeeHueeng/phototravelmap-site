@@ -42,7 +42,11 @@ const IC = {
   point: svg('<circle cx="12" cy="12" r="8.500"/><path d="M10 16V8h2.800a2.500 2.500 0 0 1 0 5H10"/>', { s: 18 }),
   chev: svg('<path d="M9 5l7 7-7 7"/>', { s: 18 }),
   check: svg('<path d="M5 12.500l4.500 4.500L19 7.500"/>', { w: 2.600 }),
+  user: svg('<circle cx="12" cy="8.500" r="3.700"/><path d="M4.500 20a7.500 7.500 0 0 1 15 0"/>'),
 };
+
+// 프로필 사진(없으면 이름 첫 글자). uid 를 주면 누를 수 있다(그 사람의 프로필)
+const ava = (a, cls) => { a = a || {}; const inner = a.avatar ? `<img src="${esc(a.avatar)}" alt="" loading="lazy">` : esc((a.name || '?').slice(0, 1)); return `<span class="cm-ava${cls ? ' ' + cls : ''}${a.avatar ? ' pic' : ''}"${a.uid ? ` data-act="profile" data-uid="${a.uid}" role="button"` : ''}>${inner}</span>`; };
 
 const BOARDS = [['free', '자유게시판'], ['mate', '같이 여행가요'], ['plan', '여행일정공유'], ['brag', '여행 자랑']];
 const BOARD_HINT = { free: '여행 이야기라면 무엇이든 나눠요.', mate: '같이 떠날 사람을 찾아요. 언제, 어디로 가는지 적어 주세요.', plan: '내가 짠 여행 일정을 나눠요. 마음에 들면 내 여행으로 담아 갈 수 있어요.', brag: '다녀온 곳을 사진과 함께 자랑해요.' };
@@ -245,7 +249,8 @@ ACT.reload = () => { loadList(); loadMe(); };
 ACT.open = (d) => show('post', { id: +d.id });
 ACT['cm-menu'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티'))}</div><ul class="rows">
-    ${authed() ? `<li class="row tap" data-act="points"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">${esc(tr('내 포인트'))}</div></div><span class="chev"></span></li>
+    ${authed() ? `<li class="row tap" data-act="profile-edit"><span class="cm-ic">${IC.user}</span><div class="row-body"><div class="row-title">${esc(tr('프로필 설정'))}</div><div class="row-desc">${esc(tr('프로필 사진 · 닉네임 · 소개'))}</div></div><span class="chev"></span></li>
+    <li class="row tap" data-act="points"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">${esc(tr('내 포인트'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="blocks"><span class="cm-ic">${IC.block}</span><div class="row-body"><div class="row-title">${esc(tr('차단한 사람'))}</div></div><span class="chev"></span></li>` : ''}
     ${webOn() ? `<li class="row tap" data-act="web-info"><span class="cm-ic">${IC.web}</span><div class="row-body"><div class="row-title">${esc(tr('웹에서 보기 · 글쓰기'))}</div><div class="row-desc">${esc(tr('PC나 다른 기기의 브라우저에서'))}</div></div><span class="chev"></span></li>` : ''}
     <li class="row tap" data-act="terms-view"><span class="cm-ic">${IC.flag}</span><div class="row-body"><div class="row-title">${esc(tr('커뮤니티 이용 약속'))}</div><div class="row-desc">${esc(tr('신고·차단 안내'))}</div></div><span class="chev"></span></li></ul>
@@ -296,10 +301,29 @@ function paintBlocks(j) {
 ACT.unblock = async (d) => { try { paintBlocks(await api('DELETE', '/community/blocks/' + encodeURIComponent(d.uid))); loadList(); } catch (e) { toast(errText(e)); } };
 
 // ---------- 글 보기 ----------
+// 붙인 여행 일정을 날짜별로 자세히: 날짜마다 순서 · 시각 · 이름 · 주소 · 메모 · 머무는 시간 · 다음 곳까지의 이동. 날짜는 접었다 펼 수 있다.
+const MOVE_NAME = { walk: '걷기', subway: '지하철', bus: '버스', train: '기차', taxi: '택시', car: '자동차', plane: '비행기', ferry: '배' };
+const minText = (m) => (m >= 60 ? (m % 60 ? tr('{h}시간 {m}분', { h: Math.floor(m / 60), m: m % 60 }) : tr('{n}시간', { n: m / 60 })) : tr('{n}분', { n: m }));
+function planDays(d) {
+  const items = (d && d.items) || []; if (!items.length) return '';
+  const keys = []; const by = {}; for (const it of items) { const k = it.day || ''; if (!by[k]) { by[k] = []; keys.push(k); } by[k].push(it); }
+  keys.sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a < b ? -1 : a > b ? 1 : 0));   // 날짜순, 날짜를 정하지 않은 곳은 맨 아래
+  const start = dOf(d.start) || dOf(keys[0]);
+  const dayLabel = (k) => { const dt = dOf(k); if (!dt) return [tr('날짜 미정'), '']; const n = start ? Math.round((dt - start) / 86400000) + 1 : 0; let s = k; try { s = new Intl.DateTimeFormat(LOCALE(), { month: 'short', day: 'numeric', weekday: 'short' }).format(dt); } catch (e) { /* ignore */ } return [n > 0 ? tr('{n}일차', { n }) : s, n > 0 ? s : '']; };
+  return `<div class="cm-plan">${keys.map((k) => {
+    const list = by[k]; const [a, b] = dayLabel(k); const cnt = list.filter(x => x.kind !== 'note').length; let no = 0;
+    const rows = list.map((it) => {
+      if (it.kind === 'note') return `<li class="note"><span class="cm-plan-n">·</span><div><div class="cm-plan-name">${esc(it.name)}</div>${it.memo ? `<div class="cm-plan-memo">${esc(it.memo)}</div>` : ''}</div></li>`;
+      no++; const lg = it.leg; const leg = lg && (lg.mode || lg.min) ? `<li class="leg">${esc([lg.mode && MOVE_NAME[lg.mode] ? tr(MOVE_NAME[lg.mode]) : '', lg.min ? minText(lg.min) : ''].filter(Boolean).join(' · '))}</li>` : '';
+      return `<li><span class="cm-plan-n">${no}</span><div><div class="cm-plan-top"><b class="cm-plan-name">${esc(it.name)}</b>${it.time ? `<span class="cm-plan-time">${esc(it.time)}</span>` : ''}</div>${it.addr ? `<div class="cm-plan-addr">${esc(it.addr)}</div>` : ''}${it.memo ? `<div class="cm-plan-memo">${esc(it.memo)}</div>` : ''}${it.stay ? `<div class="cm-plan-stay">${esc(tr('{t} 머물기', { t: minText(it.stay) }))}</div>` : ''}</div></li>${leg}`;
+    }).join('');
+    return `<details class="cm-plan-day" open><summary><b>${esc(a)}</b><span>${esc([b, tr('{n}곳', { n: cnt })].filter(Boolean).join(' · '))}</span></summary><ol>${rows}</ol></details>`;
+  }).join('')}</div>`;
+}
 function planCard(a, post) {
-  const d = a.doc || {}; const places = (d.items || []).filter(x => x.kind !== 'note'); const names = places.slice(0, 6).map(x => x.name);
-  return `<div class="cm-attcard"><div class="cm-attcard-k">${IC.plan}${esc(tr('여행 일정'))}</div><div class="cm-attcard-t">${esc(d.title || '')}</div><div class="cm-attcard-s">${esc([rangeText(d.start, d.end), tr('{n}곳', { n: places.length })].filter(Boolean).join(' · '))}</div>
-    ${names.length ? `<ol class="cm-attlist">${names.map(n => `<li>${esc(n)}</li>`).join('')}${places.length > names.length ? `<li class="more">${esc(tr('외 {n}곳', { n: places.length - names.length }))}</li>` : ''}</ol>` : ''}
+  const d = a.doc || {}; const places = (d.items || []).filter(x => x.kind !== 'note'); const dests = (d.dests || []).map(x => x.name).filter(Boolean);
+  return `<div class="cm-attcard"><div class="cm-attcard-k">${IC.plan}${esc(tr('여행 일정'))}</div><div class="cm-attcard-t">${esc(d.title || '')}</div><div class="cm-attcard-s">${esc([dests.slice(0, 4).join(', '), rangeText(d.start, d.end), tr('{n}곳', { n: places.length })].filter(Boolean).join(' · '))}</div>
+    ${planDays(d)}
     ${root.Planner && root.Planner.importDoc ? `<button type="button" class="btn weak" data-act="import" data-id="${post.id}">${esc(tr('내 여행에 담기'))}</button>` : ''}</div>`;
 }
 function recordCard(a) {
@@ -308,9 +332,27 @@ function recordCard(a) {
     ${(a.places || []).length ? `<div class="cm-places">${a.places.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}</div>`;
 }
 function commentHtml(c) {
-  return `<li class="cm-cmt" data-cid="${c.id}"><span class="cm-ava">${esc((c.author.name || '?').slice(0, 1))}</span><div class="cm-cmt-body"><div class="cm-cmt-head"><b>${esc(c.author.name || tr('이름 없음'))}</b><span>${esc(ago(c.createdAt))}</span></div><p>${esc(c.body)}</p></div>
+  if (c.deleted) return `<li class="cm-cmt gone" data-cid="${c.id}"><span class="cm-ava"></span><div class="cm-cmt-body"><p>${esc(tr('지워진 댓글이에요.'))}</p></div></li>`;
+  return `<li class="cm-cmt${c.parent ? ' reply' : ''}" data-cid="${c.id}">${ava(c.author)}<div class="cm-cmt-body"><div class="cm-cmt-head"><b>${esc(c.author.name || tr('이름 없음'))}</b><span>${esc(ago(c.createdAt))}</span></div><p>${esc(c.body)}</p>
+    <button type="button" class="cm-cmt-reply" data-act="cmt-reply" data-id="${c.id}">${esc(tr('답글 달기'))}</button></div>
     <button type="button" class="cm-cmt-more" data-act="cmt-menu" data-id="${c.id}" aria-label="${esc(tr('더 보기'))}">${IC.more}</button></li>`;
 }
+// 댓글 목록을 다시 그린다(서버가 줄기 순서로 준다: 댓글 → 그 답글들)
+function paintComments() {
+  const p = ST.post; if (!p) return; const ul = $('#cm-cmts'); if (ul) ul.innerHTML = (p.commentList || []).map(commentHtml).join('');
+  const t = $('#cm-cmt-title'); if (t) t.textContent = tr('댓글 {n}', { n: p.comments });
+  const none = $('#cm-cmt-none'); if (none && (p.commentList || []).length) none.remove();
+}
+function paintReply() {   // 입력 칸 위의 '○○님에게 답글' 줄
+  const box = $('#cm-replyto'); if (!box) return; const r = ST.reply;
+  box.hidden = !r; box.innerHTML = r ? `<span>${esc(tr('{name}님에게 답글', { name: r.name || tr('이름 없음') }))}</span><button type="button" data-act="cmt-reply-x" aria-label="${esc(tr('답글 그만두기'))}">${IC.close}</button>` : '';
+  const inp = $('#cm-cmt-in'); if (inp) inp.placeholder = r ? tr('답글을 남겨 보세요') : tr('댓글을 남겨 보세요');
+}
+ACT['cmt-reply'] = (d) => {
+  const p = ST.post; const c = p && (p.commentList || []).find(x => x.id === +d.id); if (!c || c.deleted) return;
+  ST.reply = { id: c.id, name: c.author.name }; paintReply(); const inp = $('#cm-cmt-in'); if (inp) inp.focus();
+};
+ACT['cmt-reply-x'] = () => { ST.reply = null; paintReply(); };
 // ---------- 서식 있는 본문 ----------
 // 서버가 걸러 저장한 본문(bodyHtml)도 그릴 때 한 번 더 거른다: 허용한 태그만, 속성은 정해 둔 것만. 사진은 <img data-photo="id"> 자리를 photos 의 주소로 바꾼다.
 const RT_INLINE = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', S: 's', STRIKE: 's', DEL: 's' };
@@ -353,7 +395,7 @@ function postHtml(p) {
   const place = placeText(p);
   return `<div class="cm-post"><div class="cm-tags"><span class="cm-tag b-${esc(p.board)}">${esc(boardName(p.board))}</span>${place ? `<span class="cm-tag">${esc(place)}</span>` : ''}${p.hidden ? `<span class="cm-tag warn">${esc(tr('가려진 글'))}</span>` : ''}</div>
     <h1 class="cm-post-title">${esc(p.title)}</h1>
-    <div class="cm-author"><span class="cm-ava">${esc((p.author.name || '?').slice(0, 1))}</span><div><b>${esc(p.author.name || tr('이름 없음'))}</b><span>${esc(ago(p.createdAt))}${p.updatedAt !== p.createdAt ? ' · ' + esc(tr('고침')) : ''}</span></div></div>
+    <div class="cm-author">${ava(p.author)}<div><b>${esc(p.author.name || tr('이름 없음'))}</b><span>${esc(ago(p.createdAt))}${p.updatedAt !== p.createdAt ? ' · ' + esc(tr('고침')) : ''}</span></div></div>
     ${p.hidden ? `<div class="cm-note">${esc(tr('신고가 여러 번 들어와 다른 사람에게는 보이지 않아요. 문의: {m}', { m: (ST.meta && ST.meta.contact) || 'hi@hueeng.com' }))}</div>` : ''}
     ${p.when ? `<div class="cm-when">${esc(tr('여행 날짜'))} · ${esc(rangeText(p.when.start, p.when.end))}</div>` : ''}
     ${bodyHtml(p)}
@@ -364,10 +406,11 @@ function postHtml(p) {
 }
 SCREENS.post = (p) => {
   const cur = ST.post && ST.post.id === p.id ? ST.post : null;
-  const bar = `<input id="cm-cmt-in" maxlength="${limit('comment', 500)}" autocomplete="off" placeholder="${esc(tr('댓글을 남겨 보세요'))}"><button type="button" class="cm-send" data-act="cmt-send" aria-label="${esc(tr('댓글 올리기'))}">${IC.send}</button>`;
+  if (!cur || (ST.reply && !(cur.commentList || []).some(x => x.id === ST.reply.id))) ST.reply = null;
+  const bar = `<div class="cm-replyto" id="cm-replyto" hidden></div><input id="cm-cmt-in" maxlength="${limit('comment', 500)}" autocomplete="off" placeholder="${esc(tr('댓글을 남겨 보세요'))}"><button type="button" class="cm-send" data-act="cmt-send" aria-label="${esc(tr('댓글 올리기'))}">${IC.send}</button>`;
   return { title: cur ? boardName(cur.board) : tr('커뮤니티'), right: cur ? `<button type="button" class="top-btn" data-act="post-menu" aria-label="${esc(tr('더 보기'))}">${IC.more}</button>` : '',
     html: cur ? postHtml(cur) : `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>`, bar: cur ? bar : '',
-    after: () => { if (cur) { const inp = $('#cm-cmt-in'); if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ACT['cmt-send'](); } }); } else loadPost(p.id); } };
+    after: () => { if (cur) { paintReply(); const inp = $('#cm-cmt-in'); if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ACT['cmt-send'](); } }); } else loadPost(p.id); } };
 };
 async function loadPost(id) {
   try { ST.post = await api('GET', '/community/posts/' + id); }
@@ -388,12 +431,11 @@ ACT['cmt-send'] = () => {
   needWriter(async () => {
     const p = ST.post; if (!p || cmtBusy) return; cmtBusy = true;   // 연달아 눌러도 한 번만 올린다
     try {
-      const j = await api('POST', '/community/posts/' + p.id + '/comments', { body: text });
-      p.commentList = (p.commentList || []).concat([j.comment]); p.comments = j.comments; if (ST.me && j.points) ST.me.points = j.points.total;
-      const again = $('#cm-cmt-in'); if (again) again.value = '';
-      const ul = $('#cm-cmts'); if (ul) ul.insertAdjacentHTML('beforeend', commentHtml(j.comment)); const none = $('#cm-cmt-none'); if (none) none.remove();
-      const t = $('#cm-cmt-title'); if (t) t.textContent = tr('댓글 {n}', { n: p.comments });
-      const sc = $('#cm-scroll'); if (sc) sc.scrollTop = sc.scrollHeight; syncCard(p); paintHead();
+      const reply = ST.reply; const j = await api('POST', '/community/posts/' + p.id + '/comments', reply ? { body: text, parent: reply.id } : { body: text });
+      p.commentList = j.commentList || (p.commentList || []).concat([j.comment]); p.comments = j.comments; if (ST.me && j.points) ST.me.points = j.points.total;
+      const again = $('#cm-cmt-in'); if (again) again.value = ''; ST.reply = null; paintReply(); paintComments();
+      const li = $(`#cm-cmts .cm-cmt[data-cid="${j.comment.id}"]`); const sc = $('#cm-scroll'); if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' }); else if (sc) sc.scrollTop = sc.scrollHeight;
+      syncCard(p); paintHead();
       toast(j.points && j.points.earned > 0 ? tr('댓글을 올렸어요. 포인트 +{n}', { n: j.points.earned }) : tr('댓글을 올렸어요.'));
     } catch (e) { toast(errText(e)); }
     cmtBusy = false;
@@ -408,8 +450,9 @@ ACT['cmt-menu'] = (d) => {
 ACT['cmt-del'] = async () => {
   const s = ST.sel, p = ST.post; if (!s || !p) return; closeSheet();
   try {
-    const j = await api('DELETE', '/community/comments/' + s.id); p.commentList = p.commentList.filter(x => x.id !== s.id); p.comments = j.comments; if (ST.me && j.points) ST.me.points = j.points.total;
-    const li = $(`#cm-cmts .cm-cmt[data-cid="${s.id}"]`); if (li) li.remove(); const t = $('#cm-cmt-title'); if (t) t.textContent = tr('댓글 {n}', { n: p.comments });   // 화면을 다시 그리지 않고 그 줄만 뺀다(읽던 자리 유지)
+    const j = await api('DELETE', '/community/comments/' + s.id); p.commentList = j.commentList || p.commentList.filter(x => x.id !== s.id); p.comments = j.comments; if (ST.me && j.points) ST.me.points = j.points.total;
+    if (ST.reply && !p.commentList.some(x => x.id === ST.reply.id && !x.deleted)) { ST.reply = null; paintReply(); }
+    paintComments();   // 화면 전체가 아니라 댓글 목록만 다시 그린다(읽던 자리 유지). 답글이 달린 댓글은 '지워진 댓글' 자리만 남는다
     syncCard(p); paintHead(); toast(tr('댓글을 지웠어요.'));
   }
   catch (e) { toast(errText(e)); }
@@ -454,6 +497,60 @@ ACT.import = () => {
   try { root.Planner.importDoc(p.attach.doc, { post: p.id, owner: p.author.name || '' }); toast(tr('내 여행에 담았어요.')); } catch (e) { log('import failed: ' + (e && e.message)); toast(tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.')); }
 };
 
+// ---------- 프로필 ----------
+ACT.profile = async (d) => {   // 글쓴이를 누르면: 프로필 사진 · 이름 · 소개 · 쓴 글 수
+  const uid = +d.uid; if (!uid) return; let pf = null;
+  try { pf = await api('GET', '/community/profile/' + uid); } catch (e) { toast(errText(e)); return; }
+  const mine = !!(ST.me && ST.me.uid === uid);
+  sheet(`<div class="cm-pf">${ava({ name: pf.name, avatar: pf.avatar }, 'big')}<b class="cm-pf-name">${esc(pf.name || tr('이름 없음'))}</b>${pf.bio ? `<p class="cm-pf-bio">${esc(pf.bio)}</p>` : ''}<span class="cm-pf-n">${esc(tr('쓴 글 {n}개', { n: pf.posts || 0 }))}</span></div>
+    ${mine ? `<button type="button" class="btn weak" data-act="profile-edit">${esc(tr('프로필 설정'))}</button>` : ''}<button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('닫기'))}</button>`);
+};
+ACT['profile-edit'] = () => needWriter(() => { closeSheet(); ST.pf = { name: (ST.me && ST.me.name) || '', bio: (ST.me && ST.me.bio) || '', avatar: (ST.me && ST.me.avatar) || '', blob: null, drop: false, busy: false }; show('profile'); });
+SCREENS.profile = () => {
+  const f = ST.pf; if (!f) return { title: '', html: '' };
+  const html = `<div class="cm-pfedit">
+    <div class="cm-pf-pic"><button type="button" class="cm-pf-avabtn" data-act="pf-pick" aria-label="${esc(tr('프로필 사진 바꾸기'))}">${ava({ name: f.name, avatar: f.avatar }, 'big')}<i>${IC.photo}</i></button>
+      <div class="cm-pf-picbtns"><button type="button" class="chip" data-act="pf-pick">${esc(tr('사진 고르기'))}</button>${f.avatar ? `<button type="button" class="chip" data-act="pf-drop">${esc(tr('사진 지우기'))}</button>` : ''}</div></div>
+    <div class="cm-flabel">${esc(tr('닉네임'))}</div><div class="field"><input id="cm-pf-name" maxlength="20" autocomplete="off" value="${esc(f.name)}" aria-label="${esc(tr('닉네임'))}"></div>
+    <div class="cm-flabel">${esc(tr('소개'))}</div><div class="field"><input id="cm-pf-bio" maxlength="80" autocomplete="off" placeholder="${esc(tr('한 줄로 나를 소개해 보세요'))}" value="${esc(f.bio)}" aria-label="${esc(tr('소개'))}"></div>
+    <p class="caption">${esc(tr('프로필 사진과 닉네임, 소개는 글과 댓글에 함께 보이고 누구나 볼 수 있어요.'))}</p></div>`;
+  return { title: tr('프로필 설정'), html, bar: `<button type="button" class="btn primary" id="cm-pf-save" data-act="pf-save">${esc(tr('저장'))}</button>`,
+    after: () => { const n = $('#cm-pf-name'), b = $('#cm-pf-bio'); if (n) n.addEventListener('input', () => { f.name = n.value; }); if (b) b.addEventListener('input', () => { f.bio = b.value; }); } };
+};
+let pfInput = null;
+ACT['pf-pick'] = () => {
+  if (!pfInput) { pfInput = document.createElement('input'); pfInput.type = 'file'; pfInput.accept = 'image/*'; pfInput.id = 'cm-pf-file'; pfInput.hidden = true; document.body.appendChild(pfInput);
+    pfInput.addEventListener('change', async () => {
+      const file = (pfInput.files || [])[0]; pfInput.value = ''; const f = ST.pf; if (!file || !f) return;
+      try {   // 가운데를 정사각으로 잘라 320px JPEG 로(위치 정보 같은 부가 정보는 빠진다)
+        let src = null; try { if (root.createImageBitmap) src = await root.createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { src = null; }
+        let url = null; if (!src) { url = URL.createObjectURL(file); src = await loadImg(url); }
+        const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight; if (!(w > 0 && h > 0)) throw new Error('image'); const side = Math.min(w, h);
+        const cv = document.createElement('canvas'); cv.width = cv.height = 320; const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 320, 320); ctx.drawImage(src, (w - side) / 2, (h - side) / 2, side, side, 0, 0, 320, 320);
+        if (url) URL.revokeObjectURL(url); if (src.close) src.close();
+        const blob = await toBlob(cv, 0.85); if (!blob) throw new Error('image');
+        f.blob = blob; f.drop = false; f.avatar = URL.createObjectURL(blob); renderScreen();
+      } catch (e) { toast(tr('사진을 읽지 못했어요.')); }
+    }); }
+  pfInput.click();
+};
+ACT['pf-drop'] = () => { const f = ST.pf; if (!f) return; f.avatar = ''; f.blob = null; f.drop = true; renderScreen(); };
+ACT['pf-save'] = async () => {
+  const f = ST.pf; if (!f || f.busy) return; const name = f.name.trim(), bio = f.bio.trim();
+  if (!name) { toast(tr('닉네임을 적어 주세요.')); return; }
+  f.busy = true; const btn = $('#cm-pf-save'); if (btn) { btn.disabled = true; btn.textContent = tr('저장하는 중…'); }
+  try {
+    const A = ACC();
+    if (ST.me && name !== ST.me.name) { if (A.setName) await A.setName(name); else await api('PATCH', '/me', { name }); }
+    if (f.blob) { const r = await fetch(A.base + '/community/profile/avatar', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + ((A.session && A.session.token) || '') }, body: f.blob }); if (!r.ok) { let j = null; try { j = await r.json(); } catch (e) { j = null; } throw Object.assign(new Error('avatar'), { code: (j && j.error) || 'http_' + r.status, status: r.status, message: (j && j.message) || '' }); } }
+    else if (f.drop) await api('DELETE', '/community/profile/avatar');
+    ST.me = await api('PUT', '/community/profile', { bio });
+    ST.pf = null; popScreen(); paintHead(); toast(tr('프로필을 저장했어요.'));
+    if (ST.post) { try { ST.post = await api('GET', '/community/posts/' + ST.post.id); const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'post') renderScreen(); } catch (e) { /* ignore */ } }
+    loadList(); if (H.onProfile) H.onProfile(ST.me);
+  } catch (e) { f.busy = false; if (btn) { btn.disabled = false; btn.textContent = tr('저장'); } toast(errText(e)); }
+};
+
 // ---------- 글쓰기 ----------
 const newDraft = (board) => ({ id: null, board: board || 'free', region: '', sub: '', title: '', body: '', html: '', photos: [], attach: null, when: { start: '', end: '' }, busy: false, sig: '' });
 const draftSig = (d) => JSON.stringify([d.board, d.region, d.sub, d.title, d.body, d.html, d.photos.map(x => x.id || x.key), d.attach ? [d.attach.kind, d.attach.title || (d.attach.doc && d.attach.doc.id)] : null, d.when]);
@@ -482,9 +579,9 @@ function photosHtml(d) {
 function attachHtml(d) {
   if (d.attach) {
     const a = d.attach; const title = a.kind === 'plan' ? (a.doc && a.doc.title) : a.title; const sub = a.kind === 'plan' ? tr('{n}곳', { n: ((a.doc && a.doc.items) || []).filter(x => x.kind !== 'note').length }) : (a.places || []).slice(0, 4).join(', ');
-    return `<div class="cm-attsel">${a.kind === 'plan' ? IC.plan : IC.record}<div><b>${esc(title || '')}</b><span>${esc([a.kind === 'plan' ? tr('여행 일정') : tr('여행 기록'), sub].filter(Boolean).join(' · '))}</span></div><button type="button" data-act="att-del" aria-label="${esc(tr('붙인 것 빼기'))}">${IC.close}</button></div>`;
+    return `<div class="cm-attsel">${a.kind === 'plan' ? IC.plan : IC.record}<div><b>${esc(title || '')}</b><span>${esc([a.kind === 'plan' ? tr('여행 일정') : tr('여행 기록'), sub].filter(Boolean).join(' · '))}</span></div><button type="button" data-act="att-del" aria-label="${esc(tr('붙인 것 빼기'))}">${IC.close}</button></div>${a.kind === 'plan' ? `<details class="cm-plan-prev" open><summary>${esc(tr('올라가는 일정 보기'))}</summary>${planDays(a.doc)}</details>` : ''}`;
   }
-  return `<div class="cm-attbtns"><button type="button" class="chip" data-act="att-plan">${IC.plan}${esc(tr('여행 일정 붙이기'))}</button><button type="button" class="chip" data-act="att-record">${IC.record}${esc(tr('여행 기록 붙이기'))}</button></div>`;
+  return `<div class="cm-attbtns"><button type="button" class="chip" data-act="att-plan">${IC.plan}${esc(tr('여행 일정 붙이기'))}</button></div>`;
 }
 // 글쓰기 화면: 위(게시판·지역·날짜) · 본문(제목 · 서식 줄 · 본문 · 사진) · 붙이기. 넓은 화면(PC)에서는 본문이 왼쪽, 나머지가 오른쪽 기둥으로 간다(community.css).
 const ED_TOOLS = [['bold', '굵게', '<b>B</b>'], ['italic', '기울임', '<i>I</i>'], ['underline', '밑줄', '<u>U</u>'], ['strikeThrough', '취소선', '<s>S</s>'], ['|'],
@@ -775,6 +872,8 @@ const Community = {
   /** 다른 화면(설정 탭의 내 정보 등)에서 쓰는 창구: 지금 아는 포인트 합계(모르면 null) · 포인트 시트 열기 */
   points() { return ST.me ? (ST.me.points || 0) : null; },
   openPoints() { ACT.points(); },
+  /** 프로필 설정 화면(프로필 사진 · 닉네임 · 소개) — 웹의 계정 메뉴에서도 연다 */
+  openProfile() { ACT['profile-edit'](); },
   /** 다른 화면에서 글쓰기를 연다(여행 탭의 일기를 게시판에 공유): 제목·본문·사진을 채운 글쓰기 화면. 사진은 여기서 다시 줄여 올리고, '올리기'를 눌러야 공개된다 */
   compose(o) {
     o = o || {};

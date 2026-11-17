@@ -123,6 +123,30 @@
 .cm-attlist { margin: 10px 0 12px; padding-left: 22px; font-size: 14px; line-height: 22px; color: var(--text-2); }
 .cm-attlist li.more { list-style: none; margin-left: -22px; color: var(--text-3); }
 .cm-attcard .btn { margin-top: 4px; }
+/* 붙인 여행 일정: 날짜별 자세한 목록 */
+.cm-plan { margin: 12px 0 10px; }
+.cm-plan-day { border-top: 1px solid var(--border); }
+.cm-plan-day summary { display: flex; align-items: baseline; gap: 8px; padding: 12px 22px 10px 0; position: relative; cursor: pointer; list-style: none; font-size: 15px; }
+.cm-plan-day summary::-webkit-details-marker { display: none; }
+.cm-plan-day summary::after { content: ''; position: absolute; right: 4px; top: 50%; width: 7px; height: 7px; margin-top: -6px; border: solid var(--text-3); border-width: 0 1.8px 1.8px 0; transform: rotate(45deg); }
+.cm-plan-day[open] summary::after { margin-top: -2px; transform: rotate(-135deg); }
+.cm-plan-day summary b { font-weight: 700; }
+.cm-plan-day summary span { font-size: 13px; color: var(--text-3); }
+.cm-plan-day ol { list-style: none; margin: 0 0 12px; padding: 0; }
+.cm-plan-day li { display: flex; gap: 10px; padding: 6px 0; }
+.cm-plan-day li > div { flex: 1; min-width: 0; }
+.cm-plan-n { flex: none; width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; border-radius: 50%; background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cm-plan-day li.note .cm-plan-n { background: var(--fill); color: var(--text-3); }
+.cm-plan-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cm-plan-name { font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.cm-plan-day li.note .cm-plan-name { font-weight: 500; color: var(--text-2); }
+.cm-plan-time { flex: none; font-size: 13px; color: var(--primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cm-plan-addr, .cm-plan-stay { font-size: 13px; line-height: 18px; color: var(--text-3); overflow-wrap: anywhere; }
+.cm-plan-memo { margin-top: 2px; font-size: 14px; line-height: 20px; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-plan-day li.leg { margin-left: 10px; padding: 2px 0 2px 21px; border-left: 2px dotted var(--grey300); font-size: 12px; line-height: 18px; color: var(--text-3); }
+.cm-plan-prev { margin-top: 8px; padding: 0 14px; border: 1px solid var(--border); border-radius: 14px; }
+.cm-plan-prev > summary { padding: 11px 0; font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.cm-plan-prev .cm-plan { margin-top: 0; max-height: 46vh; overflow-y: auto; }
 .cm-places { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .cm-places span { background: var(--fill); color: var(--text-2); border-radius: 999px; padding: 4px 10px; font-size: 13px; }
 .cm-react { display: flex; justify-content: center; margin: 16px 0 4px; }
@@ -137,6 +161,37 @@
 .cm-cmt-body p { font-size: 15px; line-height: 22px; margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-cmt-more { flex: none; width: 32px; height: 32px; color: var(--text-3); display: grid; place-items: center; }
 .cm-cmt-more svg { width: 18px; height: 18px; }
+/* 답글: 들여 쓰고, 입력 칸 위에 누구에게 다는지 보여 준다 */
+.cm-cmt.reply { margin-left: 46px; padding: 8px 0; }
+.cm-cmt.reply .cm-ava { width: 28px; height: 28px; font-size: 12px; }
+.cm-cmt.gone { color: var(--text-3); }
+.cm-cmt.gone .cm-ava { background: var(--fill); }
+.cm-cmt.gone p { font-size: 14px; margin-top: 7px; }
+.cm-cmt-reply { margin-top: 4px; padding: 2px 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
+.cm-cmt-reply:active { color: var(--primary); }
+.cm-bar { position: relative; }
+.cm-replyto { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px 8px 20px; background: var(--bg-grey); border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
+.cm-replyto[hidden] { display: none; }
+.cm-replyto span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-replyto button { flex: none; width: 28px; height: 28px; display: grid; place-items: center; color: var(--text-3); }
+.cm-replyto button svg { width: 14px; height: 14px; }
+/* 프로필 */
+.cm-ava { overflow: hidden; }
+.cm-ava.pic { background: var(--fill); }
+.cm-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cm-ava[data-act] { cursor: pointer; }
+.cm-ava.big { width: 88px; height: 88px; font-size: 34px; }
+.cm-pf { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 18px; text-align: center; }
+.cm-pf-name { font-size: 19px; line-height: 26px; margin-top: 6px; overflow-wrap: anywhere; }
+.cm-pf-bio { margin: 0; font-size: 15px; line-height: 22px; color: var(--text-2); overflow-wrap: anywhere; }
+.cm-pf-n { font-size: 13px; color: var(--text-3); }
+.cm-pfedit { max-width: 480px; }
+.cm-pf-pic { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 14px 0 6px; }
+.cm-pf-avabtn { position: relative; border-radius: 50%; }
+.cm-pf-avabtn i { position: absolute; right: -2px; bottom: -2px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--layer); border: 1px solid var(--border); color: var(--text-2); }
+.cm-pf-avabtn i svg { width: 16px; height: 16px; }
+.cm-pf-picbtns { display: flex; gap: 8px; }
+.cm-pfedit .field input { font-size: 16px; }
 #cm-viewer { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.94); display: grid; place-items: center; }
 #cm-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .cm-viewer-x { position: absolute; right: 10px; top: calc(8px + env(safe-area-inset-top)); width: 44px; height: 44px; color: #fff; display: grid; place-items: center; }
