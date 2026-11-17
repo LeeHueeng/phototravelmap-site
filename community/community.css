@@ -193,6 +193,26 @@
 .cm-replyto span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-replyto button { flex: none; width: 28px; height: 28px; display: grid; place-items: center; color: var(--text-3); }
 .cm-replyto button svg { width: 14px; height: 14px; }
+/* 알림 · 태그 */
+.cm-bell { position: relative; }
+.cm-bell b { position: absolute; right: 2px; top: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--red500); color: #fff; font-size: 10px; line-height: 16px; font-weight: 700; text-align: center; }
+#tabbar button.dot { position: relative; }
+#tabbar button.dot::after { content: ''; position: absolute; left: 50%; top: 6px; width: 7px; height: 7px; margin-left: 9px; border-radius: 50%; background: var(--red500); }
+.cm-textbtn { width: auto; padding: 0 10px; font-size: 14px; font-weight: 600; color: var(--primary); white-space: nowrap; }
+.cm-notifs { list-style: none; margin: 0; padding: 0; }
+.cm-notif { display: flex; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.cm-notif.new { background: var(--primary-weak); margin: 0 -12px; padding-left: 16px; padding-right: 16px; border-radius: 14px; border-bottom-color: transparent; }
+.cm-notif > div { flex: 1; min-width: 0; }
+.cm-notif p { margin: 0; font-size: 15px; line-height: 22px; overflow-wrap: anywhere; }
+.cm-notif-ex { color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-notif span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-mention { color: var(--primary); font-weight: 600; cursor: pointer; }
+.cm-mentionbox { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-top: 1px solid var(--border); scrollbar-width: none; }
+.cm-mentionbox[hidden] { display: none; }
+.cm-mentionbox button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; border-radius: 999px; background: var(--fill); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.cm-mentionbox .cm-ava { width: 26px; height: 26px; font-size: 12px; }
+.cm-cmt.focus { background: var(--primary-weak); margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 12px; }
+.cm-cmt.reply.focus { margin-left: 38px; }
 /* 프로필 */
 .cm-ava { overflow: hidden; }
 .cm-ava.pic { background: var(--fill); }

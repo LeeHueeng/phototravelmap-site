@@ -43,6 +43,7 @@ const IC = {
   chev: svg('<path d="M9 5l7 7-7 7"/>', { s: 18 }),
   check: svg('<path d="M5 12.500l4.500 4.500L19 7.500"/>', { w: 2.600 }),
   user: svg('<circle cx="12" cy="8.500" r="3.700"/><path d="M4.500 20a7.500 7.500 0 0 1 15 0"/>'),
+  bell: svg('<path d="M6 16.500V11a6 6 0 0 1 12 0v5.500l1.500 2h-15z"/><path d="M10 20.500a2 2 0 0 0 4 0"/>'),
 };
 
 // 프로필 사진(없으면 이름 첫 글자). uid 를 주면 누를 수 있다(그 사람의 프로필)
@@ -209,8 +210,10 @@ function renderPage() {
   const on = $('#cm-boards .chip.active'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
 function paintHead() {
+  { const tb = document.querySelector('#tabbar [data-tab="comm"]'); if (tb) tb.classList.toggle('dot', !!(authed() && ST.me && ST.me.unread)); }   // 앱 아래 탭의 커뮤니티에 빨간 점
+  if (H && H.onUnread) H.onUnread(authed() && ST.me ? (ST.me.unread || 0) : 0);
   const el = $('#cm-headbtns'); if (!el) return;
-  el.innerHTML = `${authed() && ST.me ? `<button type="button" class="cm-pill" data-act="points" aria-label="${esc(tr('포인트'))}">${IC.point}<b>${esc(String(ST.me.points || 0))}</b></button>` : ''}<button type="button" class="top-btn ${ST.q ? 'on' : ''}" data-act="q-open" aria-label="${esc(tr('검색'))}">${IC.search}</button><button type="button" class="top-btn" data-act="reload" aria-label="${esc(tr('새로 고침'))}">${IC.refresh}</button><button type="button" class="top-btn" data-act="cm-menu" aria-label="${esc(tr('더 보기'))}">${IC.more}</button>`;
+  el.innerHTML = `${authed() && ST.me ? `<button type="button" class="cm-pill" data-act="points" aria-label="${esc(tr('포인트'))}">${IC.point}<b>${esc(String(ST.me.points || 0))}</b></button>` : ''}${authed() && ST.me ? `<button type="button" class="top-btn cm-bell" data-act="notifs" aria-label="${esc(ST.me.unread ? tr('알림 {n}개', { n: ST.me.unread }) : tr('알림'))}">${IC.bell}${ST.me.unread ? `<b>${ST.me.unread > 99 ? '99+' : ST.me.unread}</b>` : ''}</button>` : ''}<button type="button" class="top-btn ${ST.q ? 'on' : ''}" data-act="q-open" aria-label="${esc(tr('검색'))}">${IC.search}</button><button type="button" class="top-btn" data-act="reload" aria-label="${esc(tr('새로 고침'))}">${IC.refresh}</button><button type="button" class="top-btn" data-act="cm-menu" aria-label="${esc(tr('더 보기'))}">${IC.more}</button>`;
 }
 function attachChip(a) {
   if (!a) return '';
@@ -338,9 +341,14 @@ function recordCard(a) {
   return `<div class="cm-attcard"><div class="cm-attcard-k">${IC.record}${esc(tr('여행 기록'))}</div><div class="cm-attcard-t">${esc(a.title || '')}</div>${sub ? `<div class="cm-attcard-s">${esc(sub)}</div>` : ''}
     ${(a.places || []).length ? `<div class="cm-places">${a.places.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}</div>`;
 }
+// 댓글 글자: 태그된 사람의 @이름 을 강조(누르면 그 사람 프로필)
+function cmtText(c) {
+  let h = esc(c.body); for (const m of (c.mentions || [])) { if (!m.name) continue; const k = esc('@' + m.name); h = h.split(k).join(`<span class="cm-mention" data-act="profile" data-uid="${m.uid}">${k}</span>`); }
+  return h;
+}
 function commentHtml(c) {
   if (c.deleted) return `<li class="cm-cmt gone" data-cid="${c.id}"><span class="cm-ava"></span><div class="cm-cmt-body"><p>${esc(tr('지워진 댓글이에요.'))}</p></div></li>`;
-  return `<li class="cm-cmt${c.parent ? ' reply' : ''}" data-cid="${c.id}">${ava(c.author)}<div class="cm-cmt-body"><div class="cm-cmt-head"><b>${esc(c.author.name || tr('이름 없음'))}</b><span>${esc(ago(c.createdAt))}</span></div><p>${esc(c.body)}</p>
+  return `<li class="cm-cmt${c.parent ? ' reply' : ''}" data-cid="${c.id}">${ava(c.author)}<div class="cm-cmt-body"><div class="cm-cmt-head"><b>${esc(c.author.name || tr('이름 없음'))}</b><span>${esc(ago(c.createdAt))}</span></div><p>${cmtText(c)}</p>
     <button type="button" class="cm-cmt-reply" data-act="cmt-reply" data-id="${c.id}">${esc(tr('답글 달기'))}</button></div>
     <button type="button" class="cm-cmt-more" data-act="cmt-menu" data-id="${c.id}" aria-label="${esc(tr('더 보기'))}">${IC.more}</button></li>`;
 }
@@ -357,9 +365,27 @@ function paintReply() {   // 입력 칸 위의 '○○님에게 답글' 줄
 }
 ACT['cmt-reply'] = (d) => {
   const p = ST.post; const c = p && (p.commentList || []).find(x => x.id === +d.id); if (!c || c.deleted) return;
-  ST.reply = { id: c.id, name: c.author.name }; paintReply(); const inp = $('#cm-cmt-in'); if (inp) inp.focus();
+  ST.reply = { id: c.id, name: c.author.name }; paintReply(); const inp = $('#cm-cmt-in');
+  if (inp && c.parent && c.author.uid && c.author.name && !(ST.me && ST.me.uid === c.author.uid) && inp.value.indexOf('@' + c.author.name) < 0) { inp.value = '@' + c.author.name + ' ' + inp.value; ST.ments = (ST.ments || []).filter(m => m.uid !== c.author.uid).concat([{ uid: c.author.uid, name: c.author.name }]); }
+  if (inp) inp.focus();
 };
 ACT['cmt-reply-x'] = () => { ST.reply = null; paintReply(); };
+// 태그: 입력 칸에서 '@' 뒤에 글자를 치는 동안, 이 글에서 이야기한 사람(글쓴이·댓글 쓴 사람) 가운데 이름이 맞는 사람을 보여 준다
+function mentionQuery() { const inp = $('#cm-cmt-in'); if (!inp) return null; const pos = inp.selectionStart == null ? inp.value.length : inp.selectionStart; const m = /(^|\s)@([^\s@]{0,20})$/.exec(inp.value.slice(0, pos)); return m ? { q: m[2], at: pos - m[2].length - 1, pos } : null; }
+function paintMention() {
+  const box = $('#cm-mentionbox'); if (!box) return; const p = ST.post, mq = mentionQuery(); const me = ST.me && ST.me.uid;
+  if (!p || !mq) { box.hidden = true; box.innerHTML = ''; return; }
+  const seen = new Set(); const people = [p.author].concat((p.commentList || []).filter(c => !c.deleted).map(c => c.author)).filter(a => a && a.uid && a.name && a.uid !== me && !seen.has(a.uid) && seen.add(a.uid));
+  const q = mq.q.toLowerCase(); const hit = people.filter(a => a.name.toLowerCase().indexOf(q) === 0).concat(people.filter(a => a.name.toLowerCase().indexOf(q) > 0)).slice(0, 6);
+  if (!hit.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.innerHTML = hit.map(a => `<button type="button" data-act="mention-pick" data-uid="${a.uid}">${ava({ name: a.name, avatar: a.avatar })}<span>${esc(a.name)}</span></button>`).join(''); box.hidden = false;
+}
+ACT['mention-pick'] = (d) => {
+  const inp = $('#cm-cmt-in'), p = ST.post, mq = mentionQuery(); if (!inp || !p || !mq) return;
+  const a = [p.author].concat((p.commentList || []).map(c => c.author)).find(x => x && x.uid === +d.uid); if (!a) return;
+  const ins = '@' + a.name + ' '; inp.value = inp.value.slice(0, mq.at) + ins + inp.value.slice(mq.pos); const at = mq.at + ins.length; inp.focus(); try { inp.setSelectionRange(at, at); } catch (e) { /* ignore */ }
+  ST.ments = (ST.ments || []).filter(m => m.uid !== a.uid).concat([{ uid: a.uid, name: a.name }]); paintMention();
+};
 // ---------- 서식 있는 본문 ----------
 // 서버가 걸러 저장한 본문(bodyHtml)도 그릴 때 한 번 더 거른다: 허용한 태그만, 속성은 정해 둔 것만. 사진은 <img data-photo="id"> 자리를 photos 의 주소로 바꾼다.
 const RT_INLINE = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', S: 's', STRIKE: 's', DEL: 's' };
@@ -414,10 +440,10 @@ function postHtml(p) {
 SCREENS.post = (p) => {
   const cur = ST.post && ST.post.id === p.id ? ST.post : null;
   if (!cur || (ST.reply && !(cur.commentList || []).some(x => x.id === ST.reply.id))) ST.reply = null;
-  const bar = `<div class="cm-replyto" id="cm-replyto" hidden></div><input id="cm-cmt-in" maxlength="${limit('comment', 500)}" autocomplete="off" placeholder="${esc(tr('댓글을 남겨 보세요'))}"><button type="button" class="cm-send" data-act="cmt-send" aria-label="${esc(tr('댓글 올리기'))}">${IC.send}</button>`;
+  const bar = `<div class="cm-replyto" id="cm-replyto" hidden></div><div class="cm-mentionbox" id="cm-mentionbox" hidden></div><input id="cm-cmt-in" maxlength="${limit('comment', 500)}" autocomplete="off" placeholder="${esc(tr('댓글을 남겨 보세요'))}"><button type="button" class="cm-send" data-act="cmt-send" aria-label="${esc(tr('댓글 올리기'))}">${IC.send}</button>`;
   return { title: cur ? boardName(cur.board) : tr('커뮤니티'), right: cur ? `<button type="button" class="top-btn" data-act="post-menu" aria-label="${esc(tr('더 보기'))}">${IC.more}</button>` : '',
     html: cur ? postHtml(cur) : `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>`, bar: cur ? bar : '',
-    after: () => { if (cur) { paintReply(); const inp = $('#cm-cmt-in'); if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ACT['cmt-send'](); } }); } else loadPost(p.id); } };
+    after: () => { if (cur && ST.focusCmt) { const li = $(`#cm-cmts .cm-cmt[data-cid="${ST.focusCmt}"]`); ST.focusCmt = null; if (li) { li.classList.add('focus'); if (li.scrollIntoView) li.scrollIntoView({ block: 'center' }); } } if (cur) { paintReply(); ST.ments = ST.ments || []; const inp = $('#cm-cmt-in'); if (inp) { inp.addEventListener('input', paintMention); inp.addEventListener('click', paintMention); } if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ACT['cmt-send'](); } }); } else loadPost(p.id); } };
 };
 async function loadPost(id) {
   try { ST.post = await api('GET', '/community/posts/' + id); }
@@ -438,7 +464,8 @@ ACT['cmt-send'] = () => {
   needWriter(async () => {
     const p = ST.post; if (!p || cmtBusy) return; cmtBusy = true;   // 연달아 눌러도 한 번만 올린다
     try {
-      const reply = ST.reply; const j = await api('POST', '/community/posts/' + p.id + '/comments', reply ? { body: text, parent: reply.id } : { body: text });
+      const reply = ST.reply; const ms = (ST.ments || []).filter(m => text.indexOf('@' + m.name) >= 0).map(m => m.uid); const payload = { body: text }; if (reply) payload.parent = reply.id; if (ms.length) payload.mentions = ms;
+      const j = await api('POST', '/community/posts/' + p.id + '/comments', payload); ST.ments = []; paintMention();
       p.commentList = j.commentList || (p.commentList || []).concat([j.comment]); p.comments = j.comments; if (ST.me && j.points) ST.me.points = j.points.total;
       const again = $('#cm-cmt-in'); if (again) again.value = ''; ST.reply = null; paintReply(); paintComments();
       const li = $(`#cm-cmts .cm-cmt[data-cid="${j.comment.id}"]`); const sc = $('#cm-scroll'); if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' }); else if (sc) sc.scrollTop = sc.scrollHeight;
@@ -542,6 +569,38 @@ SCREENS.trip = (p) => {
     <p class="caption">${esc(tr('경비 · 일기 · 준비물은 앱에서 볼 수 있어요.'))}</p></div>`;
   return { title: tr('내 여행'), html };
 };
+
+// ---------- 알림 ----------
+const NOTIF_TEXT = { comment: '{name}님이 내 글에 댓글을 남겼어요.', reply: '{name}님이 내 댓글에 답글을 남겼어요.', mention: '{name}님이 댓글에서 나를 태그했어요.', like: '{name}님이 내 글을 좋아해요.' };
+SCREENS.notifs = () => {
+  const L = ST.notifs || { state: 'load', items: [] };
+  const row = (n) => `<li class="cm-notif${n.read ? '' : ' new'}" data-act="notif-open" data-id="${n.id}" role="button" tabindex="0">${ava({ name: n.actor.name, avatar: n.actor.avatar })}<div><p>${esc(tr(NOTIF_TEXT[n.kind] || NOTIF_TEXT.comment, { name: n.actor.name || tr('이름 없음') }))}</p>${n.excerpt ? `<p class="cm-notif-ex">${esc(n.excerpt)}</p>` : ''}<span>${esc([n.post.title, ago(n.createdAt)].filter(Boolean).join(' · '))}</span></div></li>`;
+  const body = L.state === 'load' ? `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>` : L.state === 'error' ? `<p class="cm-hint">${esc(tr('알림을 불러오지 못했어요.'))}</p>`
+    : !L.items.length ? `<p class="cm-hint">${esc(tr('아직 알림이 없어요. 내 글에 댓글이나 좋아요가 달리면 여기에서 알려 드려요.'))}</p>`
+      : `<ul class="cm-notifs">${L.items.map(row).join('')}</ul>${L.next ? `<button type="button" class="btn weak" data-act="notifs-more">${esc(tr('더 보기'))}</button>` : ''}`;
+  return { title: tr('알림'), right: L.items.some(n => !n.read) ? `<button type="button" class="top-btn cm-textbtn" data-act="notifs-readall">${esc(tr('모두 읽음'))}</button>` : '', html: `<div class="cm-notifbox">${body}</div>`,
+    after: () => { if (!ST.notifs) loadNotifs(); } };
+};
+async function loadNotifs(more) {
+  const cur = ST.notifs; if (!more) ST.notifs = { state: 'load', items: [], next: null };
+  try { const j = await api('GET', '/community/notifs' + (more && cur && cur.next ? '?before=' + cur.next : '')); ST.notifs = { state: 'ok', items: (more && cur ? cur.items : []).concat(j.items || []), next: j.next }; if (ST.me) ST.me.unread = j.unread; }
+  catch (e) { ST.notifs = { state: 'error', items: [], next: null }; }
+  paintHead(); const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'notifs') renderScreen();
+}
+ACT.notifs = () => needLogin(() => { closeSheet(); ST.notifs = null; show('notifs'); });
+ACT['notifs-more'] = () => loadNotifs(true);
+ACT['notifs-readall'] = async () => { try { const j = await api('POST', '/community/notifs/read', {}); if (ST.notifs) ST.notifs.items.forEach(n => { n.read = true; }); if (ST.me) ST.me.unread = j.unread; paintHead(); renderScreen(); } catch (e) { toast(errText(e)); } };
+ACT['notif-open'] = async (d) => {
+  const n = ST.notifs && ST.notifs.items.find(x => x.id === +d.id); if (!n) return;
+  if (!n.read) { n.read = true; try { const j = await api('POST', '/community/notifs/read', { ids: [n.id] }); if (ST.me) ST.me.unread = j.unread; paintHead(); } catch (e) { /* 다음에 다시 */ } }
+  ST.focusCmt = n.commentId || null; ST.post = null; show('post', { id: n.post.id });   // 전에 열어 본 글이어도 새로 받는다(새 댓글이 보여야 한다)
+};
+// 안 읽은 알림 수: 화면이 보이는 동안 1분마다, 그리고 다시 보일 때 확인한다(푸시 알림이 아니라 앱·웹을 열어 둔 동안의 표시)
+let unreadTimer = 0;
+function watchUnread() {
+  if (unreadTimer) return; const tick = () => { if (document.visibilityState === 'visible' && authed()) loadMe(); };
+  unreadTimer = setInterval(tick, 60000); document.addEventListener('visibilitychange', tick);
+}
 
 // ---------- 프로필 ----------
 ACT.profile = async (d) => {   // 글쓴이를 누르면: 프로필 사진 · 이름 · 소개 · 쓴 글 수
@@ -898,7 +957,8 @@ function bind() {
       if (kb > 80) { de.style.setProperty('--pl-vt', Math.max(0, Math.round(vv.offsetTop)) + 'px'); de.style.setProperty('--pl-vh', Math.round(vv.height) + 'px'); de.classList.add('pl-kb'); } else if (de.classList.contains('pl-kb')) { de.classList.remove('pl-kb'); de.style.removeProperty('--pl-vt'); de.style.removeProperty('--pl-vh'); } };
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
-  if (ACC() && ACC().onChange) ACC().onChange(() => { ST.me = null; if (!authed()) ST.mine = false; if (shown()) { loadMe(); renderPage(); } });
+  if (ACC() && ACC().onChange) ACC().onChange(() => { ST.me = null; if (!authed()) ST.mine = false; if (shown()) { loadMe(); renderPage(); } else if (authed()) loadMe(); else paintHead(); });
+  watchUnread(); setTimeout(() => { if (authed() && !ST.me) loadMe(); }, 1500);   // 커뮤니티 탭을 열지 않아도 아래 탭의 빨간 점은 맞춘다
 }
 const shown = () => { const pg = $('#cm-page'); return !!(pg && pg.closest('.page') && !pg.closest('.page').hidden); };
 const Community = {
