@@ -1042,6 +1042,23 @@ const Community = {
       if (o.files && o.files.length) addFiles(o.files);
     });
   },
+  /** 폰 알림 — 앱 전체(설정 화면 · 처음 안내 · '알림이 꺼져 있어요' 띠)에서 쓰는 창구. 웹 브라우저에서는 avail() 이 false */
+  push: {
+    avail: () => pushAvail(),
+    /** 권한 상태: granted · denied · unknown. 허용돼 있는데 기기 토큰이 없으면(설정 앱에서 막 켬) 조용히 다시 등록한다 */
+    async status() { if (!pushAvail()) return ''; const st = await pushStatus(false); if (st === 'granted' && !PS.token) pushStatus(true); return st; },
+    get state() { return PS.status; },
+    get on() { return pushOn(); },
+    get mutedInApp() { return pushOff(); },
+    get loggedIn() { return authed(); },
+    /** 켜기: 처음이면 기기의 허용 창이 뜬다. 예전에 거절했으면 'denied' 가 온다(→ openSettings) */
+    async enable() { setPushOff(false); const st = await pushStatus(true); if (st === 'granted' && PS.token) await pushRegister(); repaintPush(); return st; },
+    async disable() { setPushOff(true); await pushUnregister(); repaintPush(); },
+    openSettings() { try { root.webkit.messageHandlers.push.postMessage({ op: 'settings' }); } catch (e) { /* ignore */ } },
+    /** 폰으로 받지 않을 종류(comment · reply · mention · like). 로그인 전이거나 실패하면 null */
+    async prefs() { if (!authed()) return null; try { return await api('GET', '/push/prefs'); } catch (e) { return null; } },
+    async setPrefs(off) { return api('POST', '/push/prefs', { off }); },
+  },
   get busy() { return ST.stack.length > 0; },
   _debug: { ST, closeScreens, renderPage, loadList, records, toJpeg, get host() { return H; } },   // 헤드리스 시험용
 };
