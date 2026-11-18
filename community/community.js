@@ -53,7 +53,7 @@ const BOARDS = [['free', '자유게시판'], ['mate', '같이 여행가요'], ['
 const BOARD_HINT = { free: '여행 이야기라면 무엇이든 나눠요.', mate: '같이 떠날 사람을 찾아요. 언제, 어디로 가는지 적어 주세요.', plan: '내가 짠 여행 일정을 나눠요. 마음에 들면 내 여행으로 담아 갈 수 있어요.', brag: '다녀온 곳을 사진과 함께 자랑해요.' };
 const REASONS = ['스팸·광고', '욕설·비방', '음란물', '개인정보 노출', '기타'];
 const POINT_KIND = { post: '글 쓰기', photo: '사진 올린 글', comment: '댓글 쓰기', liked: '받은 좋아요', attend: '출석', undo: '지운 글·댓글' };
-const META_KEY = 'photo-map-cm-meta.v1', ATTEND_KEY = 'photo-map-cm-attend.v1';
+const META_KEY = 'photo-map-cm-meta.v1', ATTEND_KEY = 'photo-map-cm-attend.v1', LIST_CACHE = 'photo-map-cm-list.v1';   // 목록 첫 쪽(기본 보기)을 기억했다가 먼저 그린다
 
 const ST = { meta: null, me: null, board: '', region: '', sub: '', mine: false, q: '', qOpen: false, list: { items: [], next: null, state: 'idle', seq: 0, at: 0 }, stack: [], post: null, draft: null, sel: null };
 let toastT = 0, bound = false, fileInput = null, afterAuth = null, cmtBusy = false;
@@ -141,15 +141,24 @@ function listQs(before) {
   if (ST.q) q.set('q', ST.q);   // 검색어: 지금 고른 게시판·지역(또는 내 글) 안에서 제목·내용을 찾는다
   if (before) q.set('before', before); return q.toString();
 }
-async function loadList(more) {
+// 목록: keep 이면 지금 보이는 글을 둔 채 새로 받아 바꾼다(탭을 다시 열 때 “빈 목록 → 갑자기 생김”이 안 보이게). 게시판·지역을 바꿀 때만 비우고 자리표시
+const defaultView = () => !ST.mine && !ST.board && !ST.region && !ST.sub && !ST.q;
+async function loadList(more, keep) {
   const L = ST.list; if (L.state === 'loading' && more) return; const seq = ++L.seq;
-  if (!more) { L.items = []; L.next = null; } L.state = 'loading'; paintList();
+  if (!more && !keep) { L.items = []; L.next = null; } L.state = 'loading'; L.more = !!more; paintList();
   try {
     const j = await api('GET', '/community/posts?' + listQs(more ? L.next : null)); if (seq !== L.seq) return;
     L.items = more ? L.items.concat(j.items || []) : (j.items || []); L.next = j.next || null; L.state = 'done'; L.at = Date.now();
-  } catch (e) { if (seq !== L.seq) return; L.state = 'error'; L.err = e; log('list failed: ' + (e && (e.code || e.message))); }
+    if (!more && defaultView()) { try { localStorage.setItem(LIST_CACHE, JSON.stringify({ at: L.at, items: L.items.slice(0, 20), next: L.next })); } catch (e) { /* ignore */ } }
+  } catch (e) { if (seq !== L.seq) return; L.state = L.items.length && !more ? 'done' : 'error'; L.err = e; log('list failed: ' + (e && (e.code || e.message))); }
   paintList();
 }
+function listFromCache() {   // 지난번에 본 목록(기본 보기)을 먼저 그린다 — 새 목록이 오면 바뀐다
+  const L = ST.list; if (L.items.length || !defaultView()) return false;
+  try { const j = JSON.parse(localStorage.getItem(LIST_CACHE) || 'null'); if (j && Array.isArray(j.items) && j.items.length) { L.items = j.items; L.next = j.next || null; return true; } } catch (e) { /* ignore */ }
+  return false;
+}
+const skeletonHtml = () => Array.from({ length: 4 }, (_, i) => `<div class="cm-card cm-skel" aria-hidden="true"><i class="sk sk-tag"></i><i class="sk sk-title" style="width:${[78, 62, 84, 70][i]}%"></i><i class="sk sk-line"></i><i class="sk sk-meta"></i></div>`).join('');
 
 // ---------- 로그인 · 약관 ----------
 function loginSheet(then) {
@@ -234,7 +243,9 @@ function cardHtml(p) {
 }
 function paintList() {
   const box = $('#cm-list'); if (!box) return; const L = ST.list; let h = L.items.map(cardHtml).join('');
-  if (L.state === 'loading') h += `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>`;
+  if ((L.state === 'loading' || L.state === 'idle') && !L.items.length) h = skeletonHtml();   // 처음 불러오는 동안: '글이 없어요' 대신 자리표시
+  else if (L.state === 'loading' && L.more) h += `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>`;
+  else if (L.state === 'loading' || L.state === 'idle') { /* 지난 목록을 보여 주며 새로 받는 중 */ }
   else if (L.state === 'error') h += `<div class="cm-empty"><p>${esc(errText(L.err))}</p><button type="button" class="btn weak" data-act="reload">${esc(tr('다시 시도'))}</button></div>`;
   else if (!L.items.length && ST.q) h += `<div class="cm-empty"><p>${esc(tr('‘{q}’ 검색 결과가 없어요.', { q: ST.q }))}</p><button type="button" class="btn weak" data-act="q-clear">${esc(tr('검색 닫기'))}</button></div>`;
   else if (!L.items.length) h += `<div class="cm-empty"><p>${esc(ST.mine ? tr('아직 쓴 글이 없어요.') : tr('아직 글이 없어요. 첫 글을 남겨 보세요.'))}</p><button type="button" class="btn weak" data-act="write">${esc(tr('글쓰기'))}</button></div>`;
@@ -251,7 +262,7 @@ ACT['q-open'] = () => {   // 돋보기: 검색 칸을 열고 초점. 열려 있�
 };
 ACT['q-clear'] = () => { clearTimeout(qTimer); const had = !!ST.q; ST.q = ''; ST.qOpen = false; renderPage(); if (had) loadList(); if (isWide()) { const qi = $('#cm-q'); if (qi) qi.focus(); } };
 ACT.more = () => loadList(true);
-ACT.reload = () => { loadList(); loadMe(); };
+ACT.reload = () => { loadList(false, true); loadMe(); };
 ACT.open = (d) => show('post', { id: +d.id });
 ACT['cm-menu'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티'))}</div><ul class="rows">
@@ -261,6 +272,7 @@ ACT['cm-menu'] = () => {
     <li class="row tap" data-act="points"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">${esc(tr('내 포인트'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="blocks"><span class="cm-ic">${IC.block}</span><div class="row-body"><div class="row-title">${esc(tr('차단한 사람'))}</div></div><span class="chev"></span></li>` : ''}
     ${webOn() ? `<li class="row tap" data-act="web-info"><span class="cm-ic">${IC.web}</span><div class="row-body"><div class="row-title">${esc(tr('웹에서 보기 · 글쓰기'))}</div><div class="row-desc">${esc(tr('PC나 다른 기기의 브라우저에서'))}</div></div><span class="chev"></span></li>` : ''}
+    ${ST.me && ST.me.admin ? `<li class="row tap" data-act="admin"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">사용 통계</div><div class="row-desc">관리자만 보여요 · 활성·재방문·기능</div></div><span class="chev"></span></li>` : ''}
     <li class="row tap" data-act="terms-view"><span class="cm-ic">${IC.flag}</span><div class="row-body"><div class="row-title">${esc(tr('커뮤니티 이용 약속'))}</div><div class="row-desc">${esc(tr('신고·차단 안내'))}</div></div><span class="chev"></span></li></ul>
     <button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('닫기'))}</button>`);
 };
@@ -306,7 +318,7 @@ function paintBlocks(j) {
   const box = $('#cm-blocks'); if (!box) return; const items = (j && j.items) || []; if (ST.me) ST.me.blocks = items.map(x => x.uid);
   box.innerHTML = items.length ? `<ul class="rows">${items.map(x => `<li class="row"><div class="row-body"><div class="row-title">${esc(x.name || tr('이름 없음'))}</div></div><button type="button" class="chip" data-act="unblock" data-uid="${x.uid}">${esc(tr('차단 풀기'))}</button></li>`).join('')}</ul>` : `<p class="cm-hint">${esc(tr('차단한 사람이 없어요.'))}</p>`;
 }
-ACT.unblock = async (d) => { try { paintBlocks(await api('DELETE', '/community/blocks/' + encodeURIComponent(d.uid))); loadList(); } catch (e) { toast(errText(e)); } };
+ACT.unblock = async (d) => { try { paintBlocks(await api('DELETE', '/community/blocks/' + encodeURIComponent(d.uid))); loadList(false, true); } catch (e) { toast(errText(e)); } };
 
 // ---------- 글 보기 ----------
 // 붙인 여행 일정을 날짜별로 자세히: 날짜마다 순서 · 시각 · 이름 · 주소 · 메모 · 머무는 시간 · 다음 곳까지의 이동. 날짜는 접었다 펼 수 있다.
@@ -620,6 +632,61 @@ ACT['push-on'] = () => needLogin(async () => {
 });
 ACT['push-off'] = async () => { closeSheet(); setPushOff(true); await pushUnregister(); toast(tr('폰 알림을 껐어요. 알림함에는 계속 쌓여요.')); repaintPush(); };
 
+// ---------- 관리자: 사용 통계(11-18 사용자: "활성도, 많이 쓰는 기능, 재접률… 관리자 계정만") — 서버 ADMIN_UIDS 계정만. 개발자용이라 한국어로만(번역 대상이 아니라서 문구를 큰따옴표로 쓴다) ----------
+const MX_LABEL = {
+  'tab.home': "나의 지도 탭", 'tab.trip': "여행 탭", 'tab.comm': "커뮤니티 탭", 'tab.record': "여권 탭", 'tab.reco': "추천 탭", 'tab.settings': "설정 탭", 'tab.battle': "지도 대결", 'tab.video': "영상 만들기",
+  'app.open': "앱 열기", 'map.open': "지도 크게 보기", 'place.open': "지도에서 장소 보기", 'video.make': "영상 만들기 시작", 'video.save': "영상 저장", 'poster.save': "이미지 저장", 'photos.rescan': "사진 다시 읽기",
+  'fest.open': "축제 보기", 'dest.open': "추천 여행지 보기", 'battle.create': "대결 신청", 'battle.random': "모르는 사람과 대결", 'battle.accept': "대결 수락", 'premium.open': "프리미엄 창", 'login': "로그인",
+  'push.on': "폰 알림 켜기", 'trip.create': "여행 만들기", 'trip.open': "여행 열기", 'place.add': "장소 담기", 'expense.save': "경비 적기", 'diary.save': "일기 쓰기", 'check.add': "준비물 적기", 'stay.save': "숙소 저장",
+  'way.save': "이동 저장", 'ticket.upload': "표·확인서 올리기", 'ai.plan': "AI 일정 짜기", 'ai.chat': "AI 채팅으로 고치기", 'ai.ad': "AI 광고 보기", 'ai.buy': "AI 이용권 사기", 'trip.share': "여행 공유", 'trip.invite': "함께 보기 초대",
+  'taxi.show': "택시 기사에게 보여주기", 'fx.calc': "환율 계산기", 'settle.view': "정산 보기", 'settle.done': "정산 완료", 'route.app': "길찾기(지도 앱)", 'stay.cand': "숙소 비교 담기", 'route.optimize': "동선 정리",
+  'diary.share': "일기 공유", 'file.open': "표·확인서 열기", 'cm.view': "글 보기", 'cm.write': "글쓰기 열기", 'cm.post': "글 올리기", 'cm.comment': "댓글", 'cm.like': "좋아요", 'cm.search': "검색", 'cm.notifs': "알림함", 'cm.profile': "프로필",
+};
+const ADM = { days: 30, data: null, state: '' };
+async function loadAdmin() { ADM.state = 'load'; renderScreen(); try { ADM.data = await api('GET', '/admin/metrics?days=' + ADM.days); ADM.state = 'ok'; } catch (e) { ADM.state = 'error'; ADM.err = e; } const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'admin') renderScreen(); }
+const nf = (v) => (v == null ? '–' : Number(v).toLocaleString('ko-KR'));
+const pc = (v) => (v == null ? '–' : v + '%');
+function spark(series, color, h) {   // 일별 막대(SVG)
+  const s = series || []; const max = Math.max(1, ...s.map(x => x[1])); const w = 300, hh = h || 64, bw = w / Math.max(1, s.length);
+  return `<svg class="adm-chart" viewBox="0 0 ${w} ${hh + 14}" preserveAspectRatio="none" role="img">${s.map((x, i) => { const bh = Math.round((x[1] / max) * hh); return `<rect x="${(i * bw + 1).toFixed(1)}" y="${hh - bh}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${bh}" rx="1.5" fill="${color}"><title>${x[0]} · ${x[1]}</title></rect>`; }).join('')}<text x="0" y="${hh + 12}" class="adm-ax">${s.length ? s[0][0].slice(5) : ''}</text><text x="${w}" y="${hh + 12}" text-anchor="end" class="adm-ax">${s.length ? s[s.length - 1][0].slice(5) : ''} · 최고 ${max}</text></svg>`;
+}
+const sum = (s) => (s || []).reduce((a, x) => a + x[1], 0);
+const kv = (o) => Object.entries(o || {}).map(([k, v]) => `<span class="adm-pill">${esc(k || "모름")} <b>${nf(v)}</b></span>`).join('') || '<span class="adm-pill">–</span>';
+SCREENS.admin = () => {
+  const M = ADM.data; const days = ADM.days;
+  const chips = [7, 30, 90].map(n => `<button type="button" class="chip ${days === n ? 'active' : ''}" data-act="adm-days" data-v="${n}">${n}일</button>`).join('');
+  if (!M) return { title: "사용 통계", html: `<div class="adm"><div class="chips small">${chips}</div><p class="cm-hint">${ADM.state === 'error' ? esc(errText(ADM.err)) : "불러오는 중…"}</p></div>`, after: () => { if (!ADM.state) loadAdmin(); } };
+  const i = M.installs || {}, r = M.retention || {}, a = M.accounts || {}, cm = M.community, ai = M.ai, tp = M.trips, bt = M.battles || {};
+  const card = (k, v, sub) => `<div class="adm-card"><span>${k}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const feats = (M.features || []).map(f => `<tr><td>${esc(MX_LABEL[f.ev] || f.ev)}<small>${esc(f.ev)}</small></td><td>${nf(f.users)}</td><td>${pc(f.share)}</td><td>${nf(f.n)}</td></tr>`).join('');
+  const coh = (r.cohorts || []).map(c => `<tr><td>${esc(c.week.slice(5))} 주</td><td>${nf(c.size)}</td><td>${pc(c.d1)}</td><td>${pc(c.d7)}</td><td>${pc(c.d30)}</td><td>${pc(c.w7)}</td></tr>`).join('');
+  const pay = ai && ai.pay ? ai.pay : {};
+  const html = `<div class="adm"><div class="chips small">${chips}</div>
+    <p class="adm-note">앱 기준(설치 번호)은 사용 통계가 들어간 새 버전부터 쌓여요. 계정·커뮤니티·AI·대결은 서버 기록 전체예요. 기준일 ${esc(M.today)} · 최근 ${days}일</p>
+    <div class="adm-grid">${card("오늘 활성", nf(i.today), "설치 기준")}${card("7일 활성", nf(i.wau))}${card("30일 활성", nf(i.mau))}${card("고착도", pc(i.stickiness), "일 평균 ÷ 30일 활성")}
+      ${card("7일 안 재방문", pc(r.returning7), "처음 연 뒤 7일 안에 다시")}${card("한 번이라도 다시", pc(r.returnedAny))}${card("전체 설치", nf(i.total))}${card("계정", nf(a.total), "7일 로그인 " + nf(a.active7))}</div>
+    <h3>일별 활성(설치)</h3>${spark(i.dau, '#3182F6')}
+    <h3>새 설치</h3>${spark(i.new, '#03B26C', 44)}
+    <h3>재접속(처음 연 주별)</h3><div class="adm-tw"><table class="adm-t"><thead><tr><th>처음 연 주</th><th>설치</th><th>1일 뒤</th><th>7일 뒤</th><th>30일 뒤</th><th>7일 안</th></tr></thead><tbody>${coh || "<tr><td colspan=6>아직 없어요</td></tr>"}</tbody></table></div>
+    <h3>많이 쓴 기능 · ${days}일</h3><div class="adm-tw"><table class="adm-t"><thead><tr><th>기능</th><th>쓴 기기</th><th>활성 중</th><th>횟수</th></tr></thead><tbody>${feats || "<tr><td colspan=4>아직 없어요</td></tr>"}</tbody></table></div>
+    <h3>계정</h3><div class="adm-grid">${card("전체", nf(a.total))}${card("오늘 로그인", nf(a.active1))}${card("7일", nf(a.active7))}${card("30일", nf(a.active30))}${card("다음 날 이후 다시", pc(a.returned))}${card("새 계정 · " + days + "일", nf(sum(a.new)))}</div>
+    <div class="adm-pills">${kv(a.providers)}</div>${spark(a.new, '#8B5CF6', 40)}
+    ${cm ? `<h3>커뮤니티</h3><div class="adm-grid">${card("글", nf(sum(cm.posts)), "전체 " + nf(cm.totals.posts))}${card("댓글", nf(sum(cm.comments)), "전체 " + nf(cm.totals.comments))}${card("좋아요", nf(sum(cm.likes)), "전체 " + nf(cm.totals.likes))}${card("글쓴 사람", nf(cm.totals.writers), "약관 동의 " + nf(cm.totals.agreed))}</div>${spark(cm.posts, '#F59E0B', 40)}` : ''}
+    ${ai ? `<h3>AI 도움받기</h3><div class="adm-grid">${card("일정 짜기", nf(sum(ai.plan)))}${card("채팅 고치기", nf(sum(ai.chat)))}${card("쓴 사람", nf(ai.users))}${card("이용권 판매", nf(ai.purchases), "전체 " + nf(ai.purchasesAll) + " · 약 " + nf((ai.purchasesAll || 0) * 1000) + "원")}${card("남은 이용권", nf(ai.creditsLeft), "회")}</div>
+      <div class="adm-pills"><span class="adm-pill">무료 <b>${nf(pay.free)}</b></span><span class="adm-pill">광고 <b>${nf(pay.ad)}</b></span><span class="adm-pill">이용권 <b>${nf(pay.credit)}</b></span><span class="adm-pill">프리미엄 <b>${nf(pay.premium)}</b></span></div>` : ''}
+    ${tp ? `<h3>여행 저장 · 함께 보기</h3><div class="adm-grid">${card("서버에 저장한 여행", nf(tp.saved), "저장한 사람 " + nf(tp.savers))}${card("함께 보는 여행", nf(tp.shared))}${card("초대 링크", nf(tp.invites))}${card("새 저장 · " + days + "일", nf(sum(tp.new)))}</div>` : ''}
+    <h3>지도 대결 · 알림</h3><div class="adm-grid">${card("대결", nf(bt.total), "수락 " + nf(bt.accepted))}${card("랭킹(1년 통계)", nf(bt.ranked))}${card("폰 알림 기기", nf(Object.values(M.push || {}).reduce((x, y) => x + y, 0)), kvText(M.push))}</div>
+    <h3>플랫폼 · 버전 · 언어(30일 활성 설치)</h3><div class="adm-pills">${kv(i.platforms)}</div><div class="adm-pills">${kv(i.versions)}</div><div class="adm-pills">${kv(i.langs)}</div>
+    <p class="adm-note">생성 ${esc(M.generated || '')}</p></div>`;
+  return { title: "사용 통계", right: `<button type="button" class="top-btn cm-textbtn" data-act="adm-reload">새로 고침</button>`, html };
+};
+const kvText = (o) => Object.entries(o || {}).map(([k, v]) => `${k} ${v}`).join(' · ');
+ACT.admin = () => { closeSheet(); ADM.data = null; ADM.state = ''; show('admin'); };
+ACT['adm-days'] = (d) => { ADM.days = +d.v || 30; ADM.data = null; loadAdmin(); };
+ACT['adm-reload'] = () => { ADM.data = null; loadAdmin(); };
+// 기능 사용 횟수(사용 통계): 눌린 동작 중 의미 있는 것만 — 앱(app.js 의 Mx)이 있을 때만
+const MX_ACT = { open: 'cm.view', write: 'cm.write', 'w-submit': 'cm.post', 'cmt-send': 'cm.comment', like: 'cm.like', 'q-open': 'cm.search', notifs: 'cm.notifs', 'profile-edit': 'cm.profile', 'push-on': 'push.on' };
+
 // ---------- 알림 ----------
 const NOTIF_TEXT = { comment: '{name}님이 내 글에 댓글을 남겼어요.', reply: '{name}님이 내 댓글에 답글을 남겼어요.', mention: '{name}님이 댓글에서 나를 태그했어요.', like: '{name}님이 내 글을 좋아해요.' };
 SCREENS.notifs = () => {
@@ -702,7 +769,7 @@ ACT['pf-save'] = async () => {
     ST.me = await api('PUT', '/community/profile', { bio });
     ST.pf = null; popScreen(); paintHead(); toast(tr('프로필을 저장했어요.'));
     if (ST.post) { try { ST.post = await api('GET', '/community/posts/' + ST.post.id); const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'post') renderScreen(); } catch (e) { /* ignore */ } }
-    loadList(); if (H.onProfile) H.onProfile(ST.me);
+    loadList(false, true); if (H.onProfile) H.onProfile(ST.me);
   } catch (e) { f.busy = false; if (btn) { btn.disabled = false; btn.textContent = tr('저장'); } toast(errText(e)); }
 };
 
@@ -982,7 +1049,7 @@ ACT['w-submit'] = async () => {
     const j = d.id ? await api('PUT', '/community/posts/' + d.id, payload) : await api('POST', '/community/posts', payload);
     ST.post = j.post; ST.draft = null; if (ST.me && j.points) ST.me.points = j.points.total;
     ST.stack.pop(); if (d.id) { ST.stack.pop(); } ST.stack.push({ name: 'post', p: { id: j.post.id } }); renderScreen();
-    if (!ST.mine && ST.board && ST.board !== j.post.board) { ST.board = j.post.board; ST.region = ''; ST.sub = ''; } renderPage(); loadList();
+    if (!ST.mine && ST.board && ST.board !== j.post.board) { ST.board = j.post.board; ST.region = ''; ST.sub = ''; } renderPage(); loadList(false, true);
     toast(d.id ? tr('글을 고쳤어요.') : (j.points && j.points.earned > 0 ? tr('글을 올렸어요. 포인트 +{n}', { n: j.points.earned }) : tr('글을 올렸어요.')));
   } catch (e) {
     d.busy = false; if (btn) { btn.disabled = false; btn.textContent = d.id ? tr('고쳐서 올리기') : tr('올리기'); }
@@ -999,7 +1066,7 @@ function bind() {
     const scope = e.target.closest('#cm-page, #cm-screen, #cm-sheet'); if (!scope) return;
     if (e.target.id === 'cm-sheet-dim') { closeSheet(); return; }
     const el = e.target.closest('[data-act]'); if (!el || !scope.contains(el) || el.disabled) return;
-    const f = ACT[el.dataset.act]; if (f) { e.preventDefault(); f(el.dataset, el, e); }
+    const f = ACT[el.dataset.act]; if (f) { e.preventDefault(); f(el.dataset, el, e); const mx = MX_ACT[el.dataset.act]; if (mx && root.Mx) root.Mx.ev(mx); }
   });
   document.addEventListener('error', (e) => { const el = e.target; if (el && el.tagName === 'IMG' && el.closest && el.closest('#cm-page, #cm-screen')) { el.classList.add('fail'); const fig = el.closest('.cm-plan-photos figure'); if (fig) { const box = fig.parentNode; fig.remove(); if (box && !box.children.length) box.remove(); } else if (el.classList.contains('cm-plan-img')) el.remove(); } }, true);   // 불러오지 못한 장소 사진은 자리째 뺀다
   if (!root.Planner && root.visualViewport) {   // 키보드가 올라오면 보이는 영역에 맞춘다(여행 탭이 있으면 거기서 같은 일을 한다: html.pl-kb, --pl-vt, --pl-vh)
@@ -1016,12 +1083,16 @@ const Community = {
   init(host) { H = host; bind(); },
   /** 커뮤니티 탭이 보일 때(app.js showTab) */
   async show() {
+    if (!ST.meta) { try { const j = JSON.parse(localStorage.getItem(META_KEY) || 'null'); if (j && j.regions) ST.meta = j; } catch (e) { /* ignore */ } }
+    if (ST.list.state === 'idle') listFromCache();
     renderPage(); if (!ACC() || !ACC().base) return;
     const fresh = ST.list.state === 'done' && Date.now() - ST.list.at < 60000;
-    if (!ST.meta) { await loadMeta(); renderPage(); } else loadMeta();
-    if (!fresh) loadList(); else paintList();
+    if (!fresh) loadList(false, true); else paintList();   // 목록과 게시판 정보를 함께 부른다(전에는 게시판 정보를 다 받은 뒤에 목록을 불렀다)
+    const hadMeta = !!ST.meta; loadMeta().then(() => { if (!hadMeta && ST.meta && shown()) renderPage(); });
     if (authed()) { await loadMe(); attend(); }
   },
+  /** 앱을 켜고 조금 뒤 목록을 미리 받아 둔다(커뮤니티 탭을 열면 바로 보이게) */
+  prefetch() { if (!ACC() || !ACC().base || ST.list.state !== 'idle') return; listFromCache(); loadList(false, true); if (!ST.meta) loadMeta(); },
   /** 뒤로가기(안드로이드 시스템 버튼 포함). 닫을 것이 있어 처리했으면 true */
   back,
   /** 글 하나를 바로 연다(공유 링크 등) */

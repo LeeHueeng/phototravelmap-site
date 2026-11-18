@@ -349,3 +349,33 @@ html.pl-kb #cm-toast { top: calc(var(--pl-vt, 0px) + var(--pl-vh, 100vh) - 128px
 #app[data-theme="dark"] .cm-like.on { background: #3A1F24; }
 #app[data-theme="dark"] .cm-tag.b-free, #app[data-theme="dark"] .cm-tag.b-mate, #app[data-theme="dark"] .cm-tag.b-plan, #app[data-theme="dark"] .cm-tag.b-brag { background: var(--fill); }
 #app[data-theme="dark"] .cm-note, #app[data-theme="dark"] .cm-tag.warn { background: #3A2E17; color: #F5C56B; }
+
+/* 목록 자리표시(처음 불러오는 동안) */
+.cm-skel { cursor: default; display: flex; flex-direction: column; gap: 8px; }
+.cm-skel:active { background: none; }
+.cm-skel .sk { display: block; height: 14px; border-radius: 7px; background: linear-gradient(90deg, var(--fill) 25%, var(--bg-grey) 37%, var(--fill) 63%); background-size: 400% 100%; animation: cm-sk 1.3s ease-in-out infinite; }
+.cm-skel .sk-tag { width: 64px; height: 20px; border-radius: 10px; }
+.cm-skel .sk-title { height: 18px; }
+.cm-skel .sk-line { width: 92%; }
+.cm-skel .sk-meta { width: 40%; height: 12px; }
+@keyframes cm-sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .cm-skel .sk { animation: none; } }
+
+/* 관리자: 사용 통계 */
+.adm { padding-bottom: 32px; }
+.adm h3 { font-size: 15px; font-weight: 700; margin: 22px 0 8px; }
+.adm-note { font-size: 12px; color: var(--text-3); margin: 8px 0 4px; line-height: 1.5; }
+.adm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.adm-card { background: var(--bg-grey); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.adm-card span { font-size: 12px; color: var(--text-3); }
+.adm-card b { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.adm-card small { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-chart { width: 100%; height: 84px; display: block; }
+.adm-ax { font-size: 10px; fill: var(--text-3); }
+.adm-tw { overflow-x: auto; }
+.adm-t { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.adm-t th, .adm-t td { padding: 7px 6px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.adm-t th:first-child, .adm-t td:first-child { text-align: left; white-space: normal; }
+.adm-t td small { display: block; font-size: 10px; color: var(--text-3); }
+.adm-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.adm-pill { font-size: 12px; background: var(--bg-grey); border-radius: 12px; padding: 4px 10px; color: var(--text-2); }
