@@ -214,6 +214,7 @@ function renderPage() {
 function paintHead() {
   { const tb = document.querySelector('#tabbar [data-tab="comm"]'); if (tb) tb.classList.toggle('dot', !!(authed() && ST.me && ST.me.unread)); }   // 앱 아래 탭의 커뮤니티에 빨간 점
   if (H && H.onUnread) H.onUnread(authed() && ST.me ? (ST.me.unread || 0) : 0);
+  pushBadge(authed() && ST.me ? (ST.me.unread || 0) : 0);   // 앱 아이콘의 숫자도 안 읽은 알림 수로
   const el = $('#cm-headbtns'); if (!el) return;
   el.innerHTML = `${authed() && ST.me ? `<button type="button" class="cm-pill" data-act="points" aria-label="${esc(tr('포인트'))}">${IC.point}<b>${esc(String(ST.me.points || 0))}</b></button>` : ''}${authed() && ST.me ? `<button type="button" class="top-btn cm-bell" data-act="notifs" aria-label="${esc(ST.me.unread ? tr('알림 {n}개', { n: ST.me.unread }) : tr('알림'))}">${IC.bell}${ST.me.unread ? `<b>${ST.me.unread > 99 ? '99+' : ST.me.unread}</b>` : ''}</button>` : ''}<button type="button" class="top-btn ${ST.q ? 'on' : ''}" data-act="q-open" aria-label="${esc(tr('검색'))}">${IC.search}</button><button type="button" class="top-btn" data-act="reload" aria-label="${esc(tr('새로 고침'))}">${IC.refresh}</button><button type="button" class="top-btn" data-act="cm-menu" aria-label="${esc(tr('더 보기'))}">${IC.more}</button>`;
 }
@@ -255,6 +256,7 @@ ACT.open = (d) => show('post', { id: +d.id });
 ACT['cm-menu'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티'))}</div><ul class="rows">
     ${H.platform === 'web' ? `<li class="row tap" data-act="trips"><span class="cm-ic">${IC.plan}</span><div class="row-body"><div class="row-title">${esc(tr('내 여행'))}</div><div class="row-desc">${esc(tr('앱에서 만든 여행 일정 보기'))}</div></div><span class="chev"></span></li>` : ''}
+    ${authed() && pushAvail() ? `<li class="row tap" data-act="${pushOn() ? 'push-off' : 'push-on'}"><span class="cm-ic">${IC.bell}</span><div class="row-body"><div class="row-title">${esc(tr('폰 알림'))}</div><div class="row-desc">${esc(pushOn() ? tr('켜짐 · 누르면 꺼요') : tr('꺼짐 · 누르면 켜요'))}</div></div></li>` : ''}
     ${authed() ? `<li class="row tap" data-act="profile-edit"><span class="cm-ic">${IC.user}</span><div class="row-body"><div class="row-title">${esc(tr('프로필 설정'))}</div><div class="row-desc">${esc(tr('프로필 사진 · 닉네임 · 소개'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="points"><span class="cm-ic">${IC.point}</span><div class="row-body"><div class="row-title">${esc(tr('내 포인트'))}</div></div><span class="chev"></span></li>
     <li class="row tap" data-act="blocks"><span class="cm-ic">${IC.block}</span><div class="row-body"><div class="row-title">${esc(tr('차단한 사람'))}</div></div><span class="chev"></span></li>` : ''}
@@ -572,6 +574,52 @@ SCREENS.trip = (p) => {
   return { title: tr('내 여행'), html };
 };
 
+// ---------- 폰 알림(앱을 닫아도) — iOS 앱에서만. 안드로이드는 Firebase 설정이 준비되면 ----------
+// 권한·기기 토큰은 네이티브(Push.swift)가, 서버 등록은 여기서 한다(로그인돼 있고 '폰 알림'을 끄지 않았을 때). 서버: /push/register · /push/unregister
+const PUSH_OFF_KEY = 'cm-push-off.v1';
+const PS = { status: '', token: '', env: '', sent: '', checked: false, badge: -1 };   // status: granted · denied · unknown · ''(아직 모름)
+const pushAvail = () => !!H && !!H.native && H.platform === 'ios' && typeof H.askNative === 'function';
+const pushOff = () => { try { return localStorage.getItem(PUSH_OFF_KEY) === '1'; } catch (e) { return false; } };
+const setPushOff = (v) => { try { if (v) localStorage.setItem(PUSH_OFF_KEY, '1'); else localStorage.removeItem(PUSH_OFF_KEY); } catch (e) { /* ignore */ } };
+const pushOn = () => PS.status === 'granted' && !pushOff();
+async function pushStatus(ask) {
+  if (!pushAvail()) return '';
+  const r = await H.askNative('push', { op: ask ? 'request' : 'status' }); PS.status = (r && r.status) || '';
+  if (r && r.token) { PS.token = r.token; PS.env = r.env || PS.env; pushRegister(); }
+  return PS.status;
+}
+async function pushRegister() {   // 같은 내용으로 두 번 올리지 않는다
+  if (!pushAvail() || !authed() || !PS.token || pushOff() || PS.status === 'denied') return;
+  const key = [PS.token, PS.env, LANG(), (ACC().session && ACC().session.token) || ''].join('|'); if (PS.sent === key) return;
+  try { await api('POST', '/push/register', { token: PS.token, platform: 'ios', env: PS.env || 'production', lang: LANG() }); PS.sent = key; } catch (e) { log('push register failed: ' + (e && (e.code || e.message))); }
+}
+async function pushUnregister() {   // 로그아웃·끄기: 로그인 없이도 그 기기만 끊는다
+  PS.sent = ''; if (!PS.token || !ACC()) return;
+  try { await fetch(ACC().base + '/push/unregister', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: PS.token }) }); } catch (e) { /* 다음에 */ }
+}
+function pushBadge(n) { if (!pushAvail() || n === PS.badge) return; PS.badge = n; try { root.webkit.messageHandlers.push.postMessage({ op: 'badge', n }); } catch (e) { /* ignore */ } }
+root.__pushEvent = (p) => {   // 네이티브가 부른다: 기기 토큰을 받았을 때 · 앱을 보고 있는데 알림이 왔을 때
+  p = p || {};
+  if (p.token) { PS.token = p.token; PS.env = p.env || PS.env; if (!PS.status) PS.status = 'granted'; pushRegister(); }
+  if (p.arrived && authed()) loadMe().then(() => { const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'notifs') { ST.notifs = null; renderScreen(); } });
+};
+function pushCard() {
+  if (!pushAvail() || !authed()) return '';
+  if (pushOn()) return `<p class="cm-pushline">${IC.bell}<span>${esc(tr('앱을 닫아도 폰으로 알려 드려요.'))}</span><button type="button" class="cm-link" data-act="push-off">${esc(tr('끄기'))}</button></p>`;
+  return `<div class="cm-pushcard">${IC.bell}<div><b>${esc(tr('앱을 닫아도 알림 받기'))}</b><span>${esc(tr('내 글에 댓글·답글·태그·좋아요가 생기면 폰으로 알려 드려요.'))}</span></div><button type="button" class="btn primary" data-act="push-on">${esc(tr('켜기'))}</button></div>`;
+}
+const repaintPush = () => { const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'notifs') renderScreen(); };
+ACT['push-on'] = () => needLogin(async () => {
+  closeSheet(); setPushOff(false); const st = await pushStatus(true);
+  if (st === 'granted') { if (PS.token) await pushRegister(); toast(tr('앱을 닫아도 폰으로 알려 드려요.')); }
+  else if (st === 'denied') {
+    const ok = await H.askConfirm(tr('알림이 꺼져 있어요'), tr('설정 앱에서 여행여권의 알림을 허용해 주세요.'), tr('설정 열기'));
+    if (ok) { try { root.webkit.messageHandlers.push.postMessage({ op: 'settings' }); } catch (e) { /* ignore */ } }
+  }
+  repaintPush();
+});
+ACT['push-off'] = async () => { closeSheet(); setPushOff(true); await pushUnregister(); toast(tr('폰 알림을 껐어요. 알림함에는 계속 쌓여요.')); repaintPush(); };
+
 // ---------- 알림 ----------
 const NOTIF_TEXT = { comment: '{name}님이 내 글에 댓글을 남겼어요.', reply: '{name}님이 내 댓글에 답글을 남겼어요.', mention: '{name}님이 댓글에서 나를 태그했어요.', like: '{name}님이 내 글을 좋아해요.' };
 SCREENS.notifs = () => {
@@ -580,8 +628,8 @@ SCREENS.notifs = () => {
   const body = L.state === 'load' ? `<p class="cm-hint">${esc(tr('불러오는 중…'))}</p>` : L.state === 'error' ? `<p class="cm-hint">${esc(tr('알림을 불러오지 못했어요.'))}</p>`
     : !L.items.length ? `<p class="cm-hint">${esc(tr('아직 알림이 없어요. 내 글에 댓글이나 좋아요가 달리면 여기에서 알려 드려요.'))}</p>`
       : `<ul class="cm-notifs">${L.items.map(row).join('')}</ul>${L.next ? `<button type="button" class="btn weak" data-act="notifs-more">${esc(tr('더 보기'))}</button>` : ''}`;
-  return { title: tr('알림'), right: L.items.some(n => !n.read) ? `<button type="button" class="top-btn cm-textbtn" data-act="notifs-readall">${esc(tr('모두 읽음'))}</button>` : '', html: `<div class="cm-notifbox">${body}</div>`,
-    after: () => { if (!ST.notifs) loadNotifs(); } };
+  return { title: tr('알림'), right: L.items.some(n => !n.read) ? `<button type="button" class="top-btn cm-textbtn" data-act="notifs-readall">${esc(tr('모두 읽음'))}</button>` : '', html: `<div class="cm-notifbox">${pushCard()}${body}</div>`,
+    after: () => { if (!ST.notifs) loadNotifs(); if (pushAvail() && !PS.checked) { PS.checked = true; pushStatus(false).then(() => { const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'notifs') renderScreen(); }); } } };
 };
 async function loadNotifs(more) {
   const cur = ST.notifs; if (!more) ST.notifs = { state: 'load', items: [], next: null };
@@ -959,7 +1007,8 @@ function bind() {
       if (kb > 80) { de.style.setProperty('--pl-vt', Math.max(0, Math.round(vv.offsetTop)) + 'px'); de.style.setProperty('--pl-vh', Math.round(vv.height) + 'px'); de.classList.add('pl-kb'); } else if (de.classList.contains('pl-kb')) { de.classList.remove('pl-kb'); de.style.removeProperty('--pl-vt'); de.style.removeProperty('--pl-vh'); } };
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
-  if (ACC() && ACC().onChange) ACC().onChange(() => { ST.me = null; if (!authed()) ST.mine = false; if (shown()) { loadMe(); renderPage(); } else if (authed()) loadMe(); else paintHead(); });
+  if (ACC() && ACC().onChange) ACC().onChange(() => { ST.me = null; if (!authed()) ST.mine = false; if (authed()) pushRegister(); else pushUnregister(); if (shown()) { loadMe(); renderPage(); } else if (authed()) loadMe(); else paintHead(); });
+  if (pushAvail()) setTimeout(() => { pushStatus(false); }, 2500);   // 앱을 열면 알림 권한·토큰을 확인해 로그인돼 있으면 서버에 올린다
   watchUnread(); setTimeout(() => { if (authed() && !ST.me) loadMe(); }, 1500);   // 커뮤니티 탭을 열지 않아도 아래 탭의 빨간 점은 맞춘다
 }
 const shown = () => { const pg = $('#cm-page'); return !!(pg && pg.closest('.page') && !pg.closest('.page').hidden); };
@@ -976,7 +1025,7 @@ const Community = {
   /** 뒤로가기(안드로이드 시스템 버튼 포함). 닫을 것이 있어 처리했으면 true */
   back,
   /** 글 하나를 바로 연다(공유 링크 등) */
-  openPost(id) { if (+id > 0) show('post', { id: +id }); },
+  openPost(id, cid) { if (+id > 0) { ST.focusCmt = +cid || null; if (ST.post && ST.post.id === +id && cid) ST.post = null; show('post', { id: +id }); } },
   /** 다른 화면(설정 탭의 내 정보 등)에서 쓰는 창구: 지금 아는 포인트 합계(모르면 null) · 포인트 시트 열기 */
   points() { return ST.me ? (ST.me.points || 0) : null; },
   openPoints() { ACT.points(); },

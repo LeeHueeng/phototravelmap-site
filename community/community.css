@@ -213,6 +213,15 @@
 .cm-mentionbox .cm-ava { width: 26px; height: 26px; font-size: 12px; }
 .cm-cmt.focus { background: var(--primary-weak); margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 12px; }
 .cm-cmt.reply.focus { margin-left: 38px; }
+.cm-pushcard { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; padding: 14px; border-radius: 16px; background: var(--primary-weak); color: var(--primary-weak-text); }
+.cm-pushcard > svg { flex: none; width: 24px; height: 24px; }
+.cm-pushcard > div { flex: 1; min-width: 0; color: var(--text); }
+.cm-pushcard b { display: block; font-size: 15px; }
+.cm-pushcard span { display: block; font-size: 13px; line-height: 18px; color: var(--text-2); }
+.cm-pushcard .btn { flex: none; width: auto; height: 38px; padding: 0 16px; font-size: 14px; }
+.cm-pushline { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; color: var(--text-3); }
+.cm-pushline svg { width: 16px; height: 16px; }
+.cm-pushline span { flex: 1; }
 /* 프로필 */
 .cm-ava { overflow: hidden; }
 .cm-ava.pic { background: var(--fill); }
