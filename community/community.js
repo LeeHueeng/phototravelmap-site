@@ -85,6 +85,8 @@ const errText = (e) => {
   if (c === 'storage_full') return tr('사진 저장 공간이 가득 찼어요. 사진 없이 올려 주세요.');
   if (c === 'too_large' || c === 'bad_image') return tr('이 사진은 올릴 수 없어요. 다른 사진을 골라 주세요.');
   if (c === 'not_found') return tr('지워졌거나 없는 글이에요.');
+  if (c === 'banned') return tr('커뮤니티 이용이 제한된 계정이에요. 문의: {m}', { m: (ST.meta && ST.meta.contact) || 'hi@hueeng.com' });
+  if (c === 'too_long') return tr('글이 너무 길어요.');
   if (c === 'region_required') return tr('지역을 골라 주세요.');
   if (c === 'plan_required') return tr('나눌 여행 일정을 붙여 주세요.');
   return tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.');
