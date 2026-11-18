@@ -574,11 +574,11 @@ SCREENS.trip = (p) => {
   return { title: tr('내 여행'), html };
 };
 
-// ---------- 폰 알림(앱을 닫아도) — iOS 앱에서만. 안드로이드는 Firebase 설정이 준비되면 ----------
-// 권한·기기 토큰은 네이티브(Push.swift)가, 서버 등록은 여기서 한다(로그인돼 있고 '폰 알림'을 끄지 않았을 때). 서버: /push/register · /push/unregister
+// ---------- 폰 알림(앱을 닫아도) — iOS(APNs) · 안드로이드(FCM) 앱에서. 웹에는 없다 ----------
+// 권한·기기 토큰은 네이티브(iOS Push.swift · 안드로이드 PushService.kt)가, 서버 등록은 여기서 한다(로그인돼 있고 '폰 알림'을 끄지 않았을 때). 서버: /push/register · /push/unregister
 const PUSH_OFF_KEY = 'cm-push-off.v1';
 const PS = { status: '', token: '', env: '', sent: '', checked: false, badge: -1 };   // status: granted · denied · unknown · ''(아직 모름)
-const pushAvail = () => !!H && !!H.native && H.platform === 'ios' && typeof H.askNative === 'function';
+const pushAvail = () => !!H && !!H.native && (H.platform === 'ios' || H.platform === 'android') && typeof H.askNative === 'function';
 const pushOff = () => { try { return localStorage.getItem(PUSH_OFF_KEY) === '1'; } catch (e) { return false; } };
 const setPushOff = (v) => { try { if (v) localStorage.setItem(PUSH_OFF_KEY, '1'); else localStorage.removeItem(PUSH_OFF_KEY); } catch (e) { /* ignore */ } };
 const pushOn = () => PS.status === 'granted' && !pushOff();
@@ -591,7 +591,7 @@ async function pushStatus(ask) {
 async function pushRegister() {   // 같은 내용으로 두 번 올리지 않는다
   if (!pushAvail() || !authed() || !PS.token || pushOff() || PS.status === 'denied') return;
   const key = [PS.token, PS.env, LANG(), (ACC().session && ACC().session.token) || ''].join('|'); if (PS.sent === key) return;
-  try { await api('POST', '/push/register', { token: PS.token, platform: 'ios', env: PS.env || 'production', lang: LANG() }); PS.sent = key; } catch (e) { log('push register failed: ' + (e && (e.code || e.message))); }
+  try { await api('POST', '/push/register', { token: PS.token, platform: H.platform, env: H.platform === 'ios' ? (PS.env || 'production') : '', lang: LANG() }); PS.sent = key; } catch (e) { log('push register failed: ' + (e && (e.code || e.message))); }
 }
 async function pushUnregister() {   // 로그아웃·끄기: 로그인 없이도 그 기기만 끊는다
   PS.sent = ''; if (!PS.token || !ACC()) return;
