@@ -16,7 +16,10 @@ textarea, select { font: inherit; color: inherit; }
 .wv-brand { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.03em; text-decoration: none; }
 .wv-brand img { flex: none; width: 30px; height: 30px; border-radius: 8px; }
 .wv-brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-nav { display: none; align-items: center; gap: 4px; margin-right: 8px; }
+.wv-nav { display: flex; align-items: center; gap: 2px; margin-right: 6px; }
+.wv-nav a:not(.wv-tab) { display: none; }   /* 휴대폰 폭: 여행 · 커뮤니티 탭만(앱 소개 · 앱 받기는 아래 줄에 있다) */
+.wv-nav a.wv-tab[aria-current="page"] { color: var(--primary); background: var(--primary-weak); }
+@media (max-width: 479px) { .wv-brand span { display: none; } .wv-me { max-width: 34vw; } }   /* 좁은 화면: 탭 자리를 내려고 앱 이름 글자는 접는다(아이콘은 남는다) */
 .wv-nav a { padding: 8px 10px; border-radius: 10px; font-size: 14px; font-weight: 600; color: var(--text-2); text-decoration: none; white-space: nowrap; }
 #wv-account { flex: none; display: inline-flex; min-width: 0; }
 .wv-login { height: 36px; padding: 0 14px; border-radius: 999px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 600; white-space: nowrap; }
@@ -74,7 +77,8 @@ textarea, select { font: inherit; color: inherit; }
   .wv-top-in { height: 64px; padding: 0 28px; }
   .wv-brand { font-size: 20px; }
   .wv-brand img { width: 34px; height: 34px; border-radius: 9px; }
-  .wv-nav { display: flex; }
+  .wv-nav { gap: 4px; margin-right: 8px; }
+  .wv-nav a:not(.wv-tab) { display: inline; }
   .page { padding-top: 12px; }
   #cm-screen .sd-top { height: 64px; padding-left: max(8px, calc(50% - 290px)); padding-right: max(8px, calc(50% - 290px)); }
   .cm-bar { padding: 12px max(16px, calc(50% - 280px)); }
