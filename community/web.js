@@ -366,13 +366,81 @@ if (PAGE === 'trips' && CFG.gmapKey && !root.CLOUD_CONFIG) root.CLOUD_CONFIG = {
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
 if (PAGE === 'trips' && !root.PhotoMapEngine) root.PhotoMapEngine = { TILE_STYLES: { esri: { maxZoom: 16, attr: 'Esri, HERE, Garmin, © OpenStreetMap contributors', under: () => '#dfe3e6',
   layers: () => [ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', ESRI + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}'] } } };
+// ---------- 여행 내보내기(웹에만, 11-20 사용자: "웹에 여행 내보내기 기능도 만들어줘") ----------
+// 여행 메뉴(⋯) 시트에 '여행 내보내기' 줄을 끼워 넣는다 → 문서(HTML 한 파일: 일정 · 예약 · 경비 · 일기 · 준비물. 열어서 인쇄하거나 PDF 로 저장) · 경비 표(CSV) · 백업 파일(JSON).
+// 파일은 이 브라우저 안에서 만들어 내려받는다(서버로 보내지 않는다). 일기 사진은 이 브라우저에 있는 것만 문서에 들어간다.
+function addExportRow() {
+  const del = $('#pl-sheet-body [data-act="trip-del"]'); if (!del || !$('#pl-sheet-body [data-act="trip-edit"]') || $('#wv-export')) return;
+  const li = del.closest('li') || del; li.insertAdjacentHTML('beforebegin', `<li class="row tap" id="wv-export" role="button" tabindex="0"><div class="row-body"><div class="row-title">${esc(tr('여행 내보내기'))}</div><div class="row-desc">${esc(tr('문서 · 경비 표 · 백업 파일로 저장해요'))}</div></div><span class="chev"></span></li>`);
+}
+const fileBase = (t) => (String(t.title || tr('여행')).replace(/[\\/:*?"<>|\n\r]+/g, ' ').trim().slice(0, 40) || 'trip');
+const dayText = (v) => { const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(String(v || '')); if (!m) return ''; try { return new Intl.DateTimeFormat(I18N.locale, { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' }).format(new Date(+m[1], +m[2] - 1, +m[3])); } catch (e) { return m[0]; } };
+const timeOf = (v) => { const m = /T(\d\d:\d\d)/.exec(String(v || '')); return m ? m[1] : ''; };
+const b64 = (buf) => { const a = new Uint8Array(buf); let out = ''; for (let i = 0; i < a.length; i += 0x8000) out += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(out); };
+async function tripDocHtml(t) {
+  const D = root.Planner._debug, C = D.C, PD = root.PLANNER_DATA || {}; const fx = D.ST.fx || null; const money = (n, cur) => C.fmtMoney(n, cur, I18N.locale);
+  const h = []; const sec = (title) => h.push(`<h2>${esc(title)}</h2>`); const live = (a) => C.live(a || []);
+  const ppl = C.people(t); const pn = (id) => { const p = ppl.find((x) => x.id === id); return p ? (p.id === t.meId ? tr('나') : p.name || '') : ''; };
+  h.push(`<h1>${esc(t.title || tr('이름 없는 여행'))}</h1><p class="sub">${esc([t.start && t.end ? dayText(t.start) + ' ~ ' + dayText(t.end) : '', (t.dests || []).map((d) => d.name).filter(Boolean).join(' · '), ppl.length > 1 ? ppl.map((p) => pn(p.id)).join(', ') : ''].filter(Boolean).join('  |  '))}</p>`);
+  // 가는 방법 · 오는 방법 · 숙소
+  const wayRow = (b) => `<tr><td>${esc([dayText(b.day || b.start), [timeOf(b.start), timeOf(b.end)].filter(Boolean).join(' → ')].filter(Boolean).join(' '))}</td><td>${esc(b.title || '')}${b.memo ? `<div class="memo">${esc(b.memo)}</div>` : ''}</td><td>${esc(b.code || '')}</td><td class="num">${b.paid > 0 ? esc(money(b.paid, t.home)) : ''}</td></tr>`;
+  for (const [dir, name] of [['go', tr('가는 방법')], ['back', tr('오는 방법')]]) { const ws = C.ways(t, dir); if (ws.length) { sec(name); h.push(`<table><tbody>${ws.map(wayRow).join('')}</tbody></table>`); } }
+  const stays = C.stays(t);
+  if (stays.length) { sec(tr('숙소')); h.push(`<table><tbody>${stays.map((b) => `<tr><td>${esc([dayText(b.start), dayText(b.end)].filter(Boolean).join(' ~ '))}</td><td>${esc(b.title || '')}${b.addr ? `<div class="memo">${esc(b.addr)}</div>` : ''}</td><td>${esc(b.code || '')}</td><td class="num">${b.paid > 0 ? esc(money(b.paid, t.home)) : ''}</td></tr>`).join('')}</tbody></table>`); }
+  // 일정
+  const days = C.tripDays(t); const itemLi = (it) => `<li>${it.time ? `<b class="time">${esc(it.time)}</b> ` : ''}${esc(it.name || '')}${it.memo ? `<span class="memo"> — ${esc(it.memo)}</span>` : ''}${it.addr ? `<div class="memo">${esc(it.addr)}</div>` : ''}</li>`;
+  const planned = days.map((d, i) => [d, i, C.dayPlan(t, d).items]).filter((x) => x[2].length); const wish = C.dayItems(t, null);
+  if (planned.length || wish.length) {
+    sec(tr('일정'));
+    for (const [d, i, items] of planned) h.push(`<h3>${esc(tr('{n}일차', { n: i + 1 }) + ' · ' + dayText(d))}</h3><ol>${items.map(itemLi).join('')}</ol>`);
+    if (wish.length) h.push(`<h3>${esc(tr('가고 싶은 곳'))}</h3><ul>${wish.map(itemLi).join('')}</ul>`);
+  }
+  // 경비
+  const exps = live(t.expenses).slice().sort((a, b) => String(a.day || '').localeCompare(String(b.day || '')) || (a.c || 0) - (b.c || 0));
+  if (exps.length) {
+    sec(tr('경비')); let sum = 0; const cat = (k) => { const c = (PD.CATS || []).find((x) => x[0] === k); return c ? tr(c[1]) : ''; };
+    const rows = exps.map((e) => { const x = C.expenseHome(t, e, fx); if (x.home != null) sum += x.home; return `<tr><td>${esc(dayText(e.day))}</td><td>${esc(cat(e.cat))}</td><td>${esc(e.memo || '')}${ppl.length > 1 && e.payer ? `<div class="memo">${esc(pn(e.payer))}</div>` : ''}</td><td class="num">${esc(money(e.amt, e.cur))}</td><td class="num">${e.cur !== t.home && x.home != null ? esc(money(x.home, t.home)) : ''}</td></tr>`; });
+    h.push(`<table><tbody>${rows.join('')}</tbody><tfoot><tr><td colspan="3">${esc(tr('합계'))}</td><td class="num" colspan="2">${esc(money(sum, t.home))}</td></tr></tfoot></table>`);
+  }
+  // 일기(사진은 이 브라우저에 있는 것만)
+  const diary = live(t.diary).filter((e) => e.title || e.text || (e.photos || []).length).sort((a, b) => String(a.day || '').localeCompare(String(b.day || '')));
+  if (diary.length) {
+    sec(tr('일기'));
+    for (const e of diary) {
+      const imgs = []; for (const id of (e.photos || [])) { try { const r = await C.Store.getFile(id); if (r && r.buf) imgs.push(`<img alt="" src="data:image/jpeg;base64,${b64(r.buf)}">`); } catch (err) { /* 이 브라우저에 없는 사진 */ } }
+      h.push(`<article><h3>${esc(dayText(e.day))}${e.title ? ' · ' + esc(e.title) : ''}</h3>${e.text ? `<p class="text">${esc(e.text)}</p>` : ''}${imgs.length ? `<div class="photos">${imgs.join('')}</div>` : ''}</article>`);
+    }
+  }
+  // 준비물 · 할 일
+  const chk = live(t.checklist);
+  if (chk.length) { sec(tr('준비물')); h.push(`<ul class="chk">${chk.map((c) => `<li>${c.done ? '☑' : '☐'} ${esc(c.title || '')}</li>`).join('')}</ul>`); }
+  const css = 'body{font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif;color:#191F28;line-height:1.6;max-width:760px;margin:0 auto;padding:32px 20px 48px;font-size:15px}h1{font-size:28px;margin:0 0 4px}h2{font-size:19px;margin:34px 0 10px;padding-bottom:6px;border-bottom:2px solid #191F28}h3{font-size:16px;margin:18px 0 6px}.sub{color:#4E5968;margin:0}table{width:100%;border-collapse:collapse}td{padding:7px 8px 7px 0;border-bottom:1px solid #E5E8EB;vertical-align:top}td.num{text-align:right;white-space:nowrap}tfoot td{font-weight:700;border-bottom:0}.memo{color:#6B7684;font-size:13px}.time{font-variant-numeric:tabular-nums}ol,ul{margin:0;padding-left:22px}li{margin:3px 0}.chk{list-style:none;padding:0}.text{white-space:pre-wrap;margin:4px 0 8px}.photos{display:flex;flex-wrap:wrap;gap:8px}.photos img{width:calc(50% - 4px);border-radius:10px}article{break-inside:avoid}footer{margin-top:40px;color:#8B95A1;font-size:12px}@media print{body{padding:0;max-width:none}h2{break-after:avoid}tr,li{break-inside:avoid}}';
+  return `<!doctype html>\n<html lang="${esc(I18N.lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(t.title || tr('이름 없는 여행'))}</title><style>${css}</style></head><body>\n${h.join('\n')}\n<footer>${esc(tr('여행여권에서 내보낸 여행이에요.'))} · ${esc(dayText(new Date().toISOString().slice(0, 10)))}</footer>\n</body></html>\n`;
+}
+function exportDialog() {
+  const D = root.Planner && root.Planner._debug; const t = D && D.ST.trips.find((x) => x.id === D.ST.tripId && !x.del); if (!t) return;
+  const row = (act, title, desc) => `<button type="button" class="row tap" data-wv="${act}"><span class="row-body"><span class="row-title">${esc(title)}</span><span class="row-desc">${esc(desc)}</span></span><span class="chev"></span></button>`;
+  openModal(`<div class="sheet-title">${esc(tr('여행 내보내기'))}</div><p class="desc">${esc(tr('파일은 이 브라우저에서 만들어 내려받아요. 서버로 보내지 않아요.'))}</p>
+    <div class="rows wv-rows">${row('x-doc', tr('문서로 저장'), tr('일정 · 예약 · 경비 · 일기 · 준비물을 한 파일로. 열어서 인쇄하거나 PDF 로 저장할 수 있어요.'))}${row('x-csv', tr('경비 표로 저장 (CSV)'), tr('엑셀 같은 표 프로그램에서 열 수 있어요.'))}${row('x-json', tr('백업 파일로 저장 (JSON)'), tr('여행 기록 전체예요. 사진은 들어가지 않아요.'))}</div>
+    <button type="button" class="btn secondary" data-wv="cancel">${esc(tr('닫기'))}</button>`,
+  async (v) => {
+    if (v !== 'x-doc' && v !== 'x-csv' && v !== 'x-json') return; let ok = false;
+    try {
+      if (v === 'x-doc') ok = saveBlob(fileBase(t) + '.html', new Blob([await tripDocHtml(t)], { type: 'text/html;charset=utf-8' }));
+      else if (v === 'x-csv') ok = saveBlob(fileBase(t) + ' ' + tr('경비') + '.csv', new Blob([D.expenseCsv(t)], { type: 'text/csv;charset=utf-8' }));
+      else { const doc = Object.assign({}, t); delete doc.cloud; delete doc.park; ok = saveBlob(fileBase(t) + '.json', new Blob([JSON.stringify({ app: 'travel-passport', format: 1, exportedAt: new Date().toISOString(), trip: doc }, null, 2)], { type: 'application/json' })); }
+    } catch (e) { tripsHost.nlog('export failed: ' + (e && e.message)); ok = false; }
+    toast(ok ? tr('파일을 저장했어요.') : tr('내보내지 못했어요.'));
+  });
+}
+document.addEventListener('click', (e) => { const t = e.target; if (PAGE === 'trips' && t && t.closest && t.closest('#wv-export')) { if (root.Planner) root.Planner.back(); setTimeout(exportDialog, 0); } });
 async function bootTrips() {
   const P = root.Planner; const login = await takeLoginResult();   // 주소 정리(로그인 코드는 커뮤니티 페이지가 받는다)
   if (!P || !root.PlannerCore) { const hint = $('#pl-list .pl-hint'); if (hint) hint.textContent = tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.'); return; }
   $$w('[data-tripseg] button').forEach((b) => b.addEventListener('click', () => { $$w('[data-tripseg] button').forEach((x) => x.classList.toggle('on', x === b)); P.listView(b.dataset.v === 'past' ? 'past' : 'now'); }));
   P.init(tripsHost);
   if (root.PlannerGMap) { root.PlannerGMap.log = tripsHost.nlog; if (root.PlannerGMap.on()) root.PlannerGMap.ready(); }   // 구글 지도 스크립트를 미리 불러 둔다(앱의 Planner.show 와 같은 일)
-  if (root.MutationObserver) { const mo = new MutationObserver(() => syncHistory()); mo.observe($('#pl-sheet'), { attributes: true, attributeFilter: ['hidden'] }); mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] }); }   // 시트 · 택시 카드 · 크게 본 사진이 열리고 닫힐 때
+  if (root.MutationObserver) { const mo = new MutationObserver(() => { addExportRow(); syncHistory(); }); mo.observe($('#pl-sheet'), { attributes: true, attributeFilter: ['hidden'] }); mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] }); }   // 시트 · 택시 카드 · 크게 본 사진이 열리고 닫힐 때
   setTimeout(() => { const sc = document.createElement('script'); sc.src = 'data/cities.js?v=' + encodeURIComponent(CFG.citiesV || ''); sc.async = true; document.head.appendChild(sc); }, 1200);   // 여행지 찾기에 쓰는 도시 이름(크다 — 화면이 뜬 뒤에 받는다. 받기 전에는 인기 여행지만 찾아진다)
   if (JOIN && P.openInvite) { try { const u = new URL(location.href); u.searchParams.delete('join'); history.replaceState(history.state, '', u.pathname + u.search); } catch (e) { /* ignore */ } P.openInvite(JOIN); }   // 초대 링크로 들어옴(…/trips/?join=코드) — 주소에서는 지운다(새로 고칠 때마다 다시 묻지 않게)
   if (login && !login.ok) notice(tr('로그인하지 못했어요'), login.canceled ? tr('로그인을 끝내지 않고 돌아왔어요. 다시 해 보세요.') : tr('잠시 뒤에 다시 해 주세요.'));
