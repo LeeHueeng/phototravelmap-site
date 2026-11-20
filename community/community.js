@@ -153,6 +153,13 @@ async function loadList(more, keep) {
   } catch (e) { if (seq !== L.seq) return; L.state = L.items.length && !more ? 'done' : 'error'; L.err = e; log('list failed: ' + (e && (e.code || e.message))); }
   paintList();
 }
+function dropFromCache(id) {   // 지워졌거나 없는 글은 기억해 둔 첫 쪽에서도 뺀다
+  try { const j = JSON.parse(localStorage.getItem(LIST_CACHE) || 'null'); if (j && Array.isArray(j.items)) { j.items = j.items.filter(x => x.id !== id); localStorage.setItem(LIST_CACHE, JSON.stringify(j)); } } catch (e) { /* ignore */ }
+}
+function resetForAccount() {   // 계정이 바뀌면(로그인·로그아웃·탈퇴) '내 글'·좋아요 표시가 달라지므로, 기억해 둔 목록·글을 버리고 새로 받는다
+  ST.post = null; ST.list = { items: [], next: null, state: 'idle', seq: (ST.list.seq || 0) + 1, at: 0 };
+  try { localStorage.removeItem(LIST_CACHE); } catch (e) { /* ignore */ }
+}
 function listFromCache() {   // 지난번에 본 목록(기본 보기)을 먼저 그린다 — 새 목록이 오면 바뀐다
   const L = ST.list; if (L.items.length || !defaultView()) return false;
   try { const j = JSON.parse(localStorage.getItem(LIST_CACHE) || 'null'); if (j && Array.isArray(j.items) && j.items.length) { L.items = j.items; L.next = j.next || null; return true; } } catch (e) { /* ignore */ }
@@ -263,7 +270,7 @@ ACT['q-open'] = () => {   // 돋보기: 검색 칸을 열고 초점. 열려 있�
 ACT['q-clear'] = () => { clearTimeout(qTimer); const had = !!ST.q; ST.q = ''; ST.qOpen = false; renderPage(); if (had) loadList(); if (isWide()) { const qi = $('#cm-q'); if (qi) qi.focus(); } };
 ACT.more = () => loadList(true);
 ACT.reload = () => { loadList(false, true); loadMe(); };
-ACT.open = (d) => show('post', { id: +d.id });
+ACT.open = (d) => { const id = +d.id; const had = !!(ST.post && ST.post.id === id); show('post', { id }); if (had) loadPost(id); };   // 전에 연 글이면 그 내용을 먼저 보여 주고 서버에서 새로 받는다(지워졌으면 닫고 목록에서 뺀다 · '내 글' 표시도 지금 계정 기준으로)
 ACT['cm-menu'] = () => {
   sheet(`<div class="sheet-title">${esc(tr('커뮤니티'))}</div><ul class="rows">
     ${H.platform === 'web' ? `<li class="row tap" data-act="trips"><span class="cm-ic">${IC.plan}</span><div class="row-body"><div class="row-title">${esc(tr('내 여행'))}</div><div class="row-desc">${esc(tr('앱에서 만든 여행 일정 보기'))}</div></div><span class="chev"></span></li>` : ''}
@@ -463,7 +470,7 @@ SCREENS.post = (p) => {
 };
 async function loadPost(id) {
   try { ST.post = await api('GET', '/community/posts/' + id); }
-  catch (e) { const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'post' && top.p.id === id) { popScreen(); toast(errText(e)); if (e && e.code === 'not_found') { ST.list.items = ST.list.items.filter(x => x.id !== id); paintList(); } } return; }
+  catch (e) { const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'post' && top.p.id === id) { popScreen(); toast(errText(e)); if (e && e.code === 'not_found') { ST.list.items = ST.list.items.filter(x => x.id !== id); dropFromCache(id); paintList(); } } return; }
   const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'post' && top.p.id === id) renderScreen();
 }
 const syncCard = (p) => { const i = ST.list.items.findIndex(x => x.id === p.id); if (i >= 0) { Object.assign(ST.list.items[i], { likes: p.likes, liked: p.liked, comments: p.comments, title: p.title }); paintList(); } };
@@ -516,7 +523,7 @@ ACT['post-menu'] = () => {
 ACT['post-del'] = async () => {
   const p = ST.post; if (!p) return; closeSheet();
   const ok = await H.askConfirm(tr('이 글을 지울까요?'), tr('댓글과 사진도 함께 지워지고 되돌릴 수 없어요.'), tr('지우기'), true); lock(); if (!ok) return;
-  try { const j = await api('DELETE', '/community/posts/' + p.id); if (ST.me && j.points) ST.me.points = j.points.total; ST.list.items = ST.list.items.filter(x => x.id !== p.id); ST.post = null; popScreen(); paintList(); paintHead(); toast(tr('글을 지웠어요.')); }
+  try { const j = await api('DELETE', '/community/posts/' + p.id); if (ST.me && j.points) ST.me.points = j.points.total; ST.list.items = ST.list.items.filter(x => x.id !== p.id); dropFromCache(p.id); ST.post = null; popScreen(); paintList(); paintHead(); toast(tr('글을 지웠어요.')); }
   catch (e) { toast(errText(e)); }
 };
 ACT.report = () => { const s = ST.sel; if (!s) return; needLogin(() => {
@@ -1074,7 +1081,11 @@ function bind() {
       if (kb > 80) { de.style.setProperty('--pl-vt', Math.max(0, Math.round(vv.offsetTop)) + 'px'); de.style.setProperty('--pl-vh', Math.round(vv.height) + 'px'); de.classList.add('pl-kb'); } else if (de.classList.contains('pl-kb')) { de.classList.remove('pl-kb'); de.style.removeProperty('--pl-vt'); de.style.removeProperty('--pl-vh'); } };
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
-  if (ACC() && ACC().onChange) ACC().onChange(() => { ST.me = null; if (!authed()) ST.mine = false; if (authed()) pushRegister(); else pushUnregister(); if (shown()) { loadMe(); renderPage(); } else if (authed()) loadMe(); else paintHead(); });
+  if (ACC() && ACC().onChange) ACC().onChange(() => {
+    ST.me = null; resetForAccount(); if (!authed()) ST.mine = false; if (authed()) pushRegister(); else pushUnregister();
+    if (shown()) { loadMe(); renderPage(); loadList(); const top = ST.stack[ST.stack.length - 1]; if (top && top.name === 'post') loadPost(top.p.id); }   // 보던 글도 새 계정 기준으로(내 글이면 고치기·지우기)
+    else { if (authed()) loadMe(); else paintHead(); if (ACC().base) loadList(false, true); }   // 탭을 안 보고 있어도 새 계정 기준 목록을 미리 받아 둔다
+  });
   if (pushAvail()) setTimeout(() => { pushStatus(false); }, 2500);   // 앱을 열면 알림 권한·토큰을 확인해 로그인돼 있으면 서버에 올린다
   watchUnread(); setTimeout(() => { if (authed() && !ST.me) loadMe(); }, 1500);   // 커뮤니티 탭을 열지 않아도 아래 탭의 빨간 점은 맞춘다
 }
@@ -1096,7 +1107,7 @@ const Community = {
   /** 뒤로가기(안드로이드 시스템 버튼 포함). 닫을 것이 있어 처리했으면 true */
   back,
   /** 글 하나를 바로 연다(공유 링크 등) */
-  openPost(id, cid) { if (+id > 0) { ST.focusCmt = +cid || null; if (ST.post && ST.post.id === +id && cid) ST.post = null; show('post', { id: +id }); } },
+  openPost(id, cid) { if (+id > 0) { ST.focusCmt = +cid || null; if (ST.post && ST.post.id === +id && cid) ST.post = null; const had = !!(ST.post && ST.post.id === +id); show('post', { id: +id }); if (had) loadPost(+id); } },
   /** 다른 화면(설정 탭의 내 정보 등)에서 쓰는 창구: 지금 아는 포인트 합계(모르면 null) · 포인트 시트 열기 */
   points() { return ST.me ? (ST.me.points || 0) : null; },
   openPoints() { ACT.points(); },

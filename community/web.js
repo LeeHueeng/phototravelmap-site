@@ -7,17 +7,23 @@
    - Community.init(host)  tr · askConfirm · shareText · login · api · setBusy
    - 웹에만 있는 것: 머리 줄의 계정 버튼(로그인 · 닉네임 · 로그아웃 · 탈퇴), 브라우저 뒤로가기, 글 주소(…/community/post/번호 — 서버가 그려 주는
                     검색용 글 페이지와 같은 주소)와 공유 버튼, 앱에서만 되는 일(여행 일정 붙이기) 안내.
+   - 내 여행(…/trips/, 11-20): 같은 파일이 여행 페이지의 호스트도 맡는다(<body data-wv-page="trips">). 여행 화면은 앱과 같은 파일(planner.js 등)이 그리고,
+                    기록은 이 브라우저(IndexedDB)에 두었다가 로그인하면 서버(/trips)와 맞춘다 — 폰의 앱과 같은 여행을 보고 고친다.
+                    서버는 로그인 뒤 …/community/ 로만 돌려보내므로, 여행 페이지에서 시작한 로그인은 커뮤니티 페이지가 코드를 바꾼 뒤 여행 페이지로 넘겨 준다.
    화면 문구를 넣으면 webver/l10n.json 에도 넣는다(조립 스크립트가 빠진 문구를 알려 준다). 한국어 문구는 작은따옴표 문자열로만 적는다. */
 (function (root) {
 'use strict';
 const CFG = root.WV_DATA || {};
 // 이 페이지가 놓인 폴더(…/community/). 글을 열면 주소가 …/community/post/번호 로 바뀌므로, 상대 주소(../terms.html 등)가 늘 이 폴더 기준으로 풀리게 <base> 를 둔다
 const ROOT = location.pathname.replace(/[^/]*$/, '');
+const PAGE = document.body && document.body.getAttribute('data-wv-page') === 'trips' ? 'trips' : 'comm';   // 이 페이지: 커뮤니티 | 내 여행
+const COMM = PAGE === 'trips' ? ROOT.replace(/[^/]+\/$/, '') + 'community/' : ROOT, TRIPS = PAGE === 'trips' ? ROOT : ROOT.replace(/[^/]+\/$/, '') + 'trips/';   // 두 페이지의 폴더(나란히 놓여 있다)
 (function () { const b = document.createElement('base'); b.href = location.origin + ROOT; document.head.insertBefore(b, document.head.firstChild); })();
 const $ = (s, el) => (el || document).querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);   // 개발용 주소에서 열었는지
 const QS = new URLSearchParams(location.search);
+const JOIN = /^[A-Za-z0-9_-]{4,64}$/.test(QS.get('join') || '') ? QS.get('join') : '';   // 여행 초대 코드(…/trips/?join=코드)
 // 저장소가 막힌 브라우저(사이트 데이터 차단)에서는 건드리기만 해도 오류가 난다 → 없는 것으로 다룬다
 const store = (name) => { try { return root[name] || null; } catch (e) { return null; } };
 const LS = store('localStorage'), SS = store('sessionStorage');
@@ -96,12 +102,13 @@ function startLogin(provider) {
   if (!base) return Promise.resolve({ error: tr('커뮤니티 서버가 아직 준비되지 않았어요.') });
   if (loginWait) return loginWait.promise;
   // 서버는 미리 허락한 주소(WEB_ORIGINS)로만 돌려보낸다. 다른 주소(사본 사이트)에서 열었으면 로그인할 수 있는 주소로 옮긴다
-  if (!LOCAL && location.origin !== CFG.origin) { location.href = CFG.origin + '/community/'; return new Promise(() => {}); }
+  if (!LOCAL && location.origin !== CFG.origin) { location.href = CFG.origin + (PAGE === 'trips' ? '/trips/' : '/community/'); return new Promise(() => {}); }
   const cmt = $('#cm-cmt-in'); const state = randomState();
-  const pend = { state, provider, at: Date.now(), act: lastAct, post: postId(), comment: cmt && cmt.value.trim() ? cmt.value : '' };
+  const pend = { state, provider, at: Date.now(), act: lastAct, post: postId(), comment: cmt && cmt.value.trim() ? cmt.value : '', page: PAGE, join: PAGE === 'trips' ? (JOIN || '') : '' };
   if (!pending.set(JSON.stringify(pend))) return Promise.resolve({ error: tr('이 브라우저에서는 로그인할 수 없어요. 사이트 데이터(쿠키) 저장을 허용한 뒤 다시 해 주세요.') });
   // 돌아올 곳은 이 화면(…/community/)이다. 보던 글은 ?post=번호 로 싣는다 — …/community/post/번호 는 서버가 그리는 글 페이지라 코드를 받아 줄 수 없다
-  const next = new URL(location.origin + ROOT + location.search); next.searchParams.delete('post'); if (pend.post) next.searchParams.set('post', String(pend.post));
+  // 여행 페이지에서 시작했어도 돌아올 곳은 커뮤니티 페이지다(서버가 그 주소만 받는다) — 거기서 코드를 바꾼 뒤 pend.page 를 보고 여행 페이지로 넘긴다
+  const next = new URL(location.origin + COMM + location.search); next.searchParams.delete('post'); next.searchParams.delete('join'); if (pend.post) next.searchParams.set('post', String(pend.post));
   let resolve; const promise = new Promise((r) => { resolve = r; }); loginWait = { promise, resolve };
   location.assign(base + '/auth/' + encodeURIComponent(provider) + '/start?' + new URLSearchParams({ web: '1', next: next.toString(), state, lang: I18N.lang }));
   return promise;   // 페이지가 떠나므로 보통은 풀리지 않는다. 뒤로가기로 돌아오면 아래 pageshow 에서 '취소'로 푼다
@@ -118,10 +125,10 @@ async function takeLoginResult() {
   const h = {}; new URLSearchParams(raw).forEach((v, k) => { h[k] = v; });
   // 내가 시작한 로그인이 아니면(state 가 다르면) 서버에 묻지도 않는다 — 남이 만든 #code=… 링크로 남의 계정에 로그인되는 것을 막는다
   if (!pend || !h.state || h.state !== pend.state || Date.now() - pend.at > 20 * 60000) return { error: 'state' };
-  if (h.error || !h.code) { try { console.warn('[login] ' + (h.error || 'no code')); } catch (e) { /* ignore */ } return { error: h.error || 'failed', canceled: /denied|cancel/i.test(h.error || '') }; }
+  if (h.error || !h.code) { try { console.warn('[login] ' + (h.error || 'no code')); } catch (e) { /* ignore */ } return { error: h.error || 'failed', canceled: /denied|cancel/i.test(h.error || ''), page: pend.page }; }
   let j = null;
-  try { j = await api('POST', '/auth/exchange', { code: h.code, state: h.state }); } catch (e) { return { error: (e && e.code) || 'exchange' }; }
-  if (!j || !j.token) return { error: 'exchange' };
+  try { j = await api('POST', '/auth/exchange', { code: h.code, state: h.state }); } catch (e) { return { error: (e && e.code) || 'exchange', page: pend.page }; }
+  if (!j || !j.token) return { error: 'exchange', page: pend.page };
   save({ token: j.token, uid: j.uid, name: j.name || '', provider: j.provider || pend.provider, at: Date.now() });
   return { ok: true, isNew: j.new === '1', pend };
 }
@@ -149,9 +156,11 @@ root.Account = {
 // ---------- 알림 · 웹 대화창(확인 · 로그인 · 닉네임 · 계정 메뉴) ----------
 const ST = () => { const C = root.Community; return C && C._debug ? C._debug.ST : null; };   // 커뮤니티의 상태(읽기만 한다)
 const sheetOpen = () => { const el = $('#cm-sheet'); return !!el && !el.hidden; };
+const shown = (sel) => { const el = $(sel); return !!el && !el.hidden; };
+const plOpen = () => !!((root.Planner && root.Planner.busy) || shown('#pl-sheet') || $('#pl-taxi') || shown('#pl-photo-view'));   // 여행 화면 · 시트 · 택시 카드 · 크게 본 사진
 let toastT = 0;
 function toast(text) { const el = $('#cm-toast'); if (!el) return; el.textContent = text; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 2400); }
-const relock = () => { document.body.style.overflow = ((root.Community && root.Community.busy) || sheetOpen() || modal) ? 'hidden' : ''; };
+const relock = () => { document.body.style.overflow = ((root.Community && root.Community.busy) || sheetOpen() || modal || (root.Planner && root.Planner.busy) || shown('#pl-sheet')) ? 'hidden' : ''; };
 let modal = null; const MODAL_ACT = {};
 function openModal(html, done) {
   if (modal) closeModal(null);
@@ -188,7 +197,7 @@ function paintAccount() {
 const reloadList = () => { const b = $('#cm-headbtns [data-act="reload"]'); if (b) b.click(); };
 function loginDialog() {
   lastAct = null; const src = $('#battle-out .login-btns');
-  openModal(`<div class="sheet-title">${esc(tr('로그인'))}</div><p class="desc">${esc(tr('글과 댓글을 쓰면 포인트가 쌓여요. 읽기는 로그인 없이 할 수 있어요.'))}</p>
+  openModal(`<div class="sheet-title">${esc(tr('로그인'))}</div><p class="desc">${esc(PAGE === 'trips' ? tr('로그인하면 여행이 서버에 저장돼서 폰의 여행여권 앱과 같은 여행을 보고 고칠 수 있어요.') : tr('글과 댓글을 쓰면 포인트가 쌓여요. 읽기는 로그인 없이 할 수 있어요.'))}</p>
     <div class="login-btns">${src ? src.innerHTML : ''}</div><p class="caption" id="wv-login-msg" style="min-height:18px"></p><button type="button" class="btn secondary" data-wv="cancel">${esc(tr('닫기'))}</button>`);
 }
 async function loginFromDialog(provider) {
@@ -201,17 +210,27 @@ function accountMenu() {
   if (!session) return; const p = PROVIDERS[session.provider];
   const row = (act, title, extra) => `<button type="button" class="row tap" data-wv="${act}"><span class="row-body"><span class="row-title">${esc(title)}</span>${extra || ''}</span><span class="chev"></span></button>`;
   openModal(`<div class="sheet-title">${esc(session.name || tr('이름 없음'))}</div>${p ? `<p class="desc">${esc(tr('{p} 계정으로 로그인했어요.', { p: tr(p) }))}</p>` : ''}
-    <div class="rows wv-rows">${row('trips', tr('내 여행'))}${row('profile', tr('프로필 설정'))}${row('nick', tr('닉네임 바꾸기'))}${row('points', tr('내 포인트'))}${row('logout', tr('로그아웃'))}
+    <div class="rows wv-rows">${PAGE === 'trips' ? row('comm', tr('커뮤니티')) : row('trips', tr('내 여행')) + row('profile', tr('프로필 설정'))}${row('nick', tr('닉네임 바꾸기'))}${PAGE === 'trips' ? '' : row('points', tr('내 포인트'))}${row('logout', tr('로그아웃'))}
       <button type="button" class="row tap" data-wv="delete"><span class="row-body"><span class="row-title danger">${esc(tr('회원 탈퇴'))}</span><span class="row-desc">${esc(tr('계정과 글·댓글·사진·포인트가 모두 지워져요.'))}</span></span><span class="chev"></span></button></div>
     <button type="button" class="btn secondary" data-wv="cancel">${esc(tr('닫기'))}</button>`,
-  (v) => { if (v === 'trips') root.Community.openTrips(); else if (v === 'profile') root.Community.openProfile(); else if (v === 'nick') askNickname(false); else if (v === 'points') root.Community.openPoints(); else if (v === 'logout') { logout(); toast(tr('로그아웃했어요.')); reloadList(); } else if (v === 'delete') deleteAccount(); });
+  (v) => { if (v === 'trips') location.href = TRIPS; else if (v === 'comm') location.href = COMM; else if (v === 'profile') root.Community.openProfile(); else if (v === 'nick') askNickname(false); else if (v === 'points') root.Community.openPoints(); else if (v === 'logout') doLogout(); else if (v === 'delete') deleteAccount(); });
+}
+/** 로그아웃. 여행 페이지에서는 먼저 못 올린 변경을 올려 보고, 남으면 알린다(앱의 설정 › 로그아웃과 같은 일) — 로그아웃하면 그 계정의 여행은 이 브라우저에서 내려간다 */
+async function doLogout() {
+  const P = root.Planner;
+  if (P && P.beforeLogout) {
+    let r = { dirty: 0 }; try { r = await P.beforeLogout(); } catch (e) { r = { dirty: 0 }; }
+    if (r && r.dirty > 0 && !(await askConfirm(tr('아직 서버에 못 올린 여행 변경이 있어요'), tr('그 여행은 이 브라우저에 남겨 두었다가, 같은 계정으로 다시 로그인하면 서버에 올려요. 다른 기기에서는 그때까지 보이지 않아요.'), tr('로그아웃')))) return;
+  }
+  logout(); toast(tr('로그아웃했어요.')); reloadList();
 }
 /** 회원 탈퇴: 무엇이 지워지는지 알리고 확인을 받은 뒤 서버에서 계정을 지운다(앱의 설정 › 회원 탈퇴와 같은 일) */
 async function deleteAccount() {
   const ok = await askConfirm(tr('회원 탈퇴할까요?'), tr('계정과 지도 대결 통계, 커뮤니티에 쓴 글·댓글·사진과 포인트, 서버에 저장한 여행이 지워져요. 친구와 함께 보던 여행에서는 나만 빠져요. 되돌릴 수 없어요.'), tr('탈퇴하기'), true);
   if (!ok) return;
+  const acct = session && session.uid;
   try { await api('DELETE', '/me'); } catch (e) { if (!(e && e.status === 401)) { toast(tr('탈퇴하지 못했어요. 잠시 뒤에 다시 해 주세요.')); return; } }
-  save(null); toast(tr('탈퇴했어요. 계정과 글이 지워졌어요.')); reloadList();
+  save(null); if (acct != null && root.Planner && root.Planner.forgetAccount) { try { root.Planner.forgetAccount(String(acct)); } catch (e) { /* ignore */ } } toast(tr('탈퇴했어요. 계정과 글이 지워졌어요.')); reloadList();
 }
 /** 닉네임 정하기(방금 가입했을 때 — 로그인 제공자가 준 이름이 그대로 보이지 않게) · 바꾸기 */
 function askNickname(first) {
@@ -238,7 +257,7 @@ MODAL_ACT['nick-save'] = async () => {
 // 글이 열려 있는 동안 주소는 …/community/post/번호 — 서버가 그려 주는 검색용 글 페이지와 같은 주소라 그대로 복사해 보내도 된다(새로 고치면 그 페이지가 뜨고, 거기서 '커뮤니티에서 보기'로 돌아온다).
 // 이 화면으로 글을 바로 여는 주소는 …/community/?post=번호 — 그렇게 들어온 때는 칸을 더하지 않고 들어온 칸에 표시만 한다({ wv: 1, own: 1 }) → 뒤로가기는 왔던 곳으로 돌아가고, 화면의 뒤로 버튼은 목록을 보여 준다
 function postId() { const st = ST(); if (!st) return null; for (let i = st.stack.length - 1; i >= 0; i--) if (st.stack[i].name === 'post') return st.stack[i].p.id; return null; }
-const isOpen = () => !!((root.Community && root.Community.busy) || sheetOpen() || $('#cm-viewer') || modal);
+const isOpen = () => !!((root.Community && root.Community.busy) || sheetOpen() || $('#cm-viewer') || modal || plOpen());
 const TITLE = { page: document.title, short: '' };
 const postPath = (id) => ROOT + 'post/' + id;
 const urlPost = () => { const m = /\/post\/(\d{1,12})$/.exec(location.pathname); return m ? +m[1] : +new URLSearchParams(location.search).get('post') || 0; };   // 지금 주소가 가리키는 글 번호
@@ -247,7 +266,7 @@ let backing = false, backT = 0;
 function syncHistory() {
   if (backing) return;
   const open = isOpen(), has = !!(history.state && history.state.wv), first = has && !!history.state.own, url = currentUrl(), same = url === location.pathname + location.search;
-  const st0 = ST(), deeper = (st0 && st0.stack.length > 1) || sheetOpen() || !!$('#cm-viewer') || !!modal;   // 들어온 글 위에 무언가 더 열렸는지(고치기 화면 · 시트 · 창)
+  const st0 = ST(), deeper = (st0 && st0.stack.length > 1) || sheetOpen() || !!$('#cm-viewer') || !!modal || plOpen();   // 들어온 글 위에 무언가 더 열렸는지(고치기 화면 · 시트 · 창)
   try {
     if (open && (!has || (first && deeper))) history.pushState({ wv: 1 }, '', url);
     else if (!open && first) history.replaceState(null, '', url);
@@ -259,14 +278,15 @@ function syncHistory() {
 }
 root.addEventListener('popstate', () => {
   if (backing) { backing = false; clearTimeout(backT); syncHistory(); return; }   // 우리가 닫으면서 되돌린 한 칸
-  const C = root.Community; if (!C) return;
+  const C = root.Community, P = root.Planner; if (!C && !P) return;
+  if (!C) { if (modal) closeModal(null); else if (plOpen()) P.back(); setTimeout(syncHistory, 0); return; }   // 여행 페이지: 맨 위에 열린 것 하나를 닫는다(여행 만들기는 한 단계 앞으로)
   if (isOpen()) { if (modal) closeModal(null); else C.back(); }   // 뒤로가기 → 맨 위에 열린 것 하나를 닫는다(쓰던 글이 있으면 커뮤니티가 먼저 물어본다)
   else { const id = urlPost(); if (id > 0 && history.state && history.state.wv) C.openPost(id); }   // 앞으로 가기 → 그 글을 다시 연다
   setTimeout(syncHistory, 0);
 });
 document.addEventListener('keydown', (e) => {
   if (e.isComposing) return;
-  if (e.key === 'Escape') { if (modal) { e.preventDefault(); closeModal(null); } else if (($('#cm-viewer') || sheetOpen()) && root.Community) { e.preventDefault(); root.Community.back(); } }
+  if (e.key === 'Escape') { if (modal) { e.preventDefault(); closeModal(null); } else if (($('#cm-viewer') || sheetOpen()) && root.Community) { e.preventDefault(); root.Community.back(); } else if ((shown('#pl-sheet') || $('#pl-taxi') || shown('#pl-photo-view')) && root.Planner) { e.preventDefault(); root.Planner.back(); } }
   else if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[role="button"][data-act]')) { e.preventDefault(); e.target.click(); }   // 글 카드를 키보드로 열기
 });
 
@@ -299,6 +319,7 @@ document.addEventListener('click', (e) => {   // 커뮤니티의 버튼 처리�
   const act = el.dataset.act; if (act !== 'cm-login') lastAct = act;   // 로그인 시트를 띄운 일(글쓰기 · 좋아요)을 기억해 두었다가 돌아와서 잇는다
   const st = ST();
   if (act === 'write' && st && st.board === 'plan' && !st.mine) { e.preventDefault(); e.stopPropagation(); planNotice(); }
+  else if (act === 'trips') { e.preventDefault(); e.stopPropagation(); location.href = TRIPS; }   // 커뮤니티 메뉴의 '내 여행' → 고칠 수 있는 여행 페이지
 }, true);
 
 // ---------- 시작 ----------
@@ -319,14 +340,51 @@ async function resume(p) {
     const like = $('#cm-screen .cm-like'); if (p.act === 'like' && like && like.getAttribute('aria-pressed') === 'false') like.click();
   } else if (p.act === 'write' && !p.post) { const fab = $('#cm-page .cm-fab'); if (fab) fab.click(); }
 }
+// ---------- 내 여행 페이지(…/trips/): 앱의 여행 탭(planner.js)을 그대로 띄운다 ----------
+/** 파일을 내려받게 한다(경비 CSV 내보내기) */
+function saveBlob(name, blob) {
+  try { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name || 'file'; a.hidden = true; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); return true; } catch (e) { return false; }
+}
+const tripsHost = {
+  tr, askConfirm, shareText, platform: 'web', demo: false, DATA: null,
+  nlog: (t) => { try { console.warn(t); } catch (e) { /* ignore */ } },
+  login: (provider) => startLogin(provider),
+  api: (m, p, b) => api(m, p, b),
+  setBusy: () => { syncHistory(); },   // 여행 화면이 열리고 닫힐 때마다 → 브라우저 뒤로가기를 맞춘다
+  openExternal: (url) => { try { root.open(url, '_blank', 'noopener'); } catch (e) { /* ignore */ } },   // 지도 앱 · 예약 사이트 링크는 새 탭으로
+  showTab: (name) => { if (name === 'comm') location.href = COMM; },   // 여행 아래 줄의 '커뮤니티'. '홈으로'는 여행 목록으로 돌아온다(여행 탭이 닫아 준다)
+  shareFile: async (f) => saveBlob(f.name, f.blob),
+  // 숙소 링크 다시 읽기: 앱은 폰이 그 페이지를 열어 읽지만 브라우저는 남의 사이트를 열어 읽을 수 없다 → 서버가 읽어 온 것(GET /links/preview)을 같은 모양으로 돌려준다
+  probeLink: async (url) => {
+    try { const j = await api('GET', '/links/preview?url=' + encodeURIComponent(url)); return j && j.fetched ? { ok: true, title: j.title || '', image: j.image || '', price: +j.price || 0, cur: j.cur || '', per: '' } : { ok: false, why: 'blocked' }; }
+    catch (e) { return { ok: false, why: (e && e.code) || 'error' }; }
+  },
+  openDoc: async (f) => { try { const u = URL.createObjectURL(f.blob); const w = root.open(u, '_blank'); setTimeout(() => URL.revokeObjectURL(u), 10 * 60000); return !!w || saveBlob(f.name, f.blob); } catch (e) { return false; } },   // 올려 둔 표·확인서: 새 탭에서 연다(팝업이 막히면 내려받는다)
+};
+// 지도: 앱처럼 구글 지도(planner-gmap.js, 표시용 키는 조립할 때 앱의 cloud-config.js 에서 가져온다). 구글 지도를 못 불러오면 앱의 예비 지도와 같은 밝은 바탕 지도(engine.js TILE_STYLES.esri 와 같은 값)
+if (PAGE === 'trips' && CFG.gmapKey && !root.CLOUD_CONFIG) root.CLOUD_CONFIG = { GOOGLE_MAPS_KEY: CFG.gmapKey };
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+if (PAGE === 'trips' && !root.PhotoMapEngine) root.PhotoMapEngine = { TILE_STYLES: { esri: { maxZoom: 16, attr: 'Esri, HERE, Garmin, © OpenStreetMap contributors', under: () => '#dfe3e6',
+  layers: () => [ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', ESRI + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}'] } } };
+async function bootTrips() {
+  const P = root.Planner; const login = await takeLoginResult();   // 주소 정리(로그인 코드는 커뮤니티 페이지가 받는다)
+  if (!P || !root.PlannerCore) { const hint = $('#pl-list .pl-hint'); if (hint) hint.textContent = tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.'); return; }
+  $$w('[data-tripseg] button').forEach((b) => b.addEventListener('click', () => { $$w('[data-tripseg] button').forEach((x) => x.classList.toggle('on', x === b)); P.listView(b.dataset.v === 'past' ? 'past' : 'now'); }));
+  P.init(tripsHost);
+  if (root.PlannerGMap) { root.PlannerGMap.log = tripsHost.nlog; if (root.PlannerGMap.on()) root.PlannerGMap.ready(); }   // 구글 지도 스크립트를 미리 불러 둔다(앱의 Planner.show 와 같은 일)
+  if (root.MutationObserver) { const mo = new MutationObserver(() => syncHistory()); mo.observe($('#pl-sheet'), { attributes: true, attributeFilter: ['hidden'] }); mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] }); }   // 시트 · 택시 카드 · 크게 본 사진이 열리고 닫힐 때
+  setTimeout(() => { const sc = document.createElement('script'); sc.src = 'data/cities.js?v=' + encodeURIComponent(CFG.citiesV || ''); sc.async = true; document.head.appendChild(sc); }, 1200);   // 여행지 찾기에 쓰는 도시 이름(크다 — 화면이 뜬 뒤에 받는다. 받기 전에는 인기 여행지만 찾아진다)
+  if (JOIN && P.openInvite) { try { const u = new URL(location.href); u.searchParams.delete('join'); history.replaceState(history.state, '', u.pathname + u.search); } catch (e) { /* ignore */ } P.openInvite(JOIN); }   // 초대 링크로 들어옴(…/trips/?join=코드) — 주소에서는 지운다(새로 고칠 때마다 다시 묻지 않게)
+  if (login && !login.ok) notice(tr('로그인하지 못했어요'), login.canceled ? tr('로그인을 끝내지 않고 돌아왔어요. 다시 해 보세요.') : tr('잠시 뒤에 다시 해 주세요.'));
+}
+const $$w = (s) => Array.from(document.querySelectorAll(s));
 async function boot() {
   const C = root.Community;
   document.documentElement.lang = I18N.lang; I18N.apply(document.body);
-  TITLE.short = tr('여행여권 커뮤니티'); if (I18N.lang !== 'ko') { TITLE.page = TITLE.short; document.title = TITLE.page; }
+  TITLE.short = PAGE === 'trips' ? tr('내 여행 — 여행여권') : tr('여행여권 커뮤니티'); if (I18N.lang !== 'ko') { TITLE.page = TITLE.short; document.title = TITLE.page; }
   paintAccount();
   document.querySelectorAll('#wv-langs a[data-lang]').forEach((a) => { const u = new URL(location.origin + ROOT + location.search); u.searchParams.delete('post'); u.searchParams.set('lang', a.dataset.lang); a.href = u.pathname + u.search; if (a.dataset.lang === I18N.lang) a.setAttribute('aria-current', 'true'); });
-  const skip = $('.wv-skip'); if (skip) skip.addEventListener('click', (e) => { e.preventDefault(); const t = $('#cm-page'); if (t) { t.setAttribute('tabindex', '-1'); t.focus(); } });
-  { const tl = $('#wv-trips'); if (tl) tl.addEventListener('click', (e) => { e.preventDefault(); root.Community.openTrips(); }); }
+  const skip = $('.wv-skip'); if (skip) skip.addEventListener('click', (e) => { e.preventDefault(); const t = $(PAGE === 'trips' ? '#pl-list' : '#cm-page'); if (t) { t.setAttribute('tabindex', '-1'); t.focus(); } });
   $('#wv-account').addEventListener('click', (e) => { const el = e.target.closest('[data-wv]'); if (!el) return; if (el.dataset.wv === 'login') loginDialog(); else accountMenu(); });
   $('#wv-modal').addEventListener('click', (e) => {
     if (e.target.id === 'wv-modal-dim') { closeModal(null); return; }
@@ -334,7 +392,15 @@ async function boot() {
     const el = e.target.closest('[data-wv]'); if (!el || el.disabled) return;
     if (MODAL_ACT[el.dataset.wv]) MODAL_ACT[el.dataset.wv](el); else closeModal(el.dataset.wv);
   });
+  if (PAGE === 'trips') { bootTrips(); return; }
   const login = await takeLoginResult();   // 로그인하고 돌아온 길이면 1회용 코드를 세션과 바꾼다(주소는 부르자마자 정리된다)
+  const fromTrips = login && (login.ok ? login.pend && login.pend.page : login.page) === 'trips';   // 여행 페이지에서 시작한 로그인 → 끝나면 그 페이지로 돌려보낸다
+  if (fromTrips) {
+    if (login.ok) { if (login.isNew) await askNickname(true); }
+    else await notice(tr('로그인하지 못했어요'), login.canceled ? tr('로그인을 끝내지 않고 돌아왔어요. 다시 해 보세요.') : tr('잠시 뒤에 다시 해 주세요.'));
+    const jn = login.ok && login.pend && /^[A-Za-z0-9_-]{4,64}$/.test(login.pend.join || '') ? login.pend.join : '';   // 초대 링크로 들어와 로그인한 길이면 그 초대를 이어서 연다
+    location.replace(TRIPS + (jn ? '?join=' + jn : '')); return;
+  }
   if (!C) { const hint = $('#cm-page .cm-hint'); if (hint) hint.textContent = tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.'); return; }   // community.js 를 받지 못함
   C.init(host);
   if (root.MutationObserver) { const mo = new MutationObserver(() => syncHistory()); mo.observe($('#cm-sheet'), { attributes: true, attributeFilter: ['hidden'] }); mo.observe(document.body, { childList: true }); }   // 시트 · 사진 크게 보기가 열리고 닫힐 때

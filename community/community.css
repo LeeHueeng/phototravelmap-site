@@ -97,7 +97,7 @@
 .cm-sub { font-size: 14px; font-weight: 600; color: var(--text-2); margin: 18px 0 8px; }
 .cm-pbig { text-align: center; padding: 6px 0 2px; }
 .cm-pbig b { display: block; font-size: 36px; line-height: 44px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.cm-pbig span { font-size: 13px; color: var(--text-3); }
+.cm-pbig span:not(.cm-ava) { font-size: 13px; color: var(--text-3); }
 .cm-plist { list-style: none; margin: 0 0 6px; padding: 0; }
 .cm-plist li { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
 .cm-plist span { flex: 1; min-width: 0; }
@@ -109,7 +109,7 @@
 .cm-post-title { font-size: 22px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0 12px; overflow-wrap: anywhere; }
 .cm-author { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .cm-author b { display: block; font-size: 15px; line-height: 21px; }
-.cm-author span { font-size: 13px; color: var(--text-3); }
+.cm-author span:not(.cm-ava) { font-size: 13px; color: var(--text-3); }
 .cm-ava { flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--primary-weak); color: var(--primary-weak-text); display: grid; place-items: center; font-size: 15px; font-weight: 700; }
 .cm-note { background: #FFF4E5; color: #9A5B00; border-radius: 12px; padding: 10px 14px; font-size: 14px; line-height: 21px; margin: 0 0 12px; }
 .cm-when { display: inline-block; font-size: 14px; color: var(--text-2); background: var(--bg-grey); border-radius: 10px; padding: 7px 12px; margin: 0 0 12px; }
@@ -175,7 +175,7 @@
 .cm-cmt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; }
 .cm-cmt-body { flex: 1; min-width: 0; }
 .cm-cmt-head b { font-size: 14px; }
-.cm-cmt-head span { font-size: 12px; color: var(--text-3); margin-left: 6px; }
+.cm-cmt-head span:not(.cm-ava) { font-size: 12px; color: var(--text-3); margin-left: 6px; }
 .cm-cmt-body p { font-size: 15px; line-height: 22px; margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-cmt-more { flex: none; width: 32px; height: 32px; color: var(--text-3); display: grid; place-items: center; }
 .cm-cmt-more svg { width: 18px; height: 18px; }
@@ -200,12 +200,13 @@
 #tabbar button.dot::after { content: ''; position: absolute; left: 50%; top: 6px; width: 7px; height: 7px; margin-left: 9px; border-radius: 50%; background: var(--red500); }
 .cm-textbtn { width: auto; padding: 0 10px; font-size: 14px; font-weight: 600; color: var(--primary); white-space: nowrap; }
 .cm-notifs { list-style: none; margin: 0; padding: 0; }
-.cm-notif { display: flex; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
-.cm-notif.new { background: var(--primary-weak); margin: 0 -12px; padding-left: 16px; padding-right: 16px; border-radius: 14px; border-bottom-color: transparent; }
+.cm-notif { display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.cm-notif.new { background: var(--primary-weak); border-radius: 14px; border-bottom-color: transparent; margin-bottom: 4px; }
+.cm-notif.new .cm-ava:not(.pic) { background: var(--bg); }   /* 새 알림 줄(연한 파랑) 위에서도 아바타 동그라미가 보이게 */
 .cm-notif > div { flex: 1; min-width: 0; }
 .cm-notif p { margin: 0; font-size: 15px; line-height: 22px; overflow-wrap: anywhere; }
 .cm-notif-ex { color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.cm-notif span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-notif span:not(.cm-ava) { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-mention { color: var(--primary); font-weight: 600; cursor: pointer; }
 .cm-mentionbox { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-top: 1px solid var(--border); scrollbar-width: none; }
 .cm-mentionbox[hidden] { display: none; }
@@ -218,7 +219,7 @@
 .cm-pushcard > div { flex: 1; min-width: 0; color: var(--text); }
 .cm-pushcard b { display: block; font-size: 15px; }
 .cm-pushcard span { display: block; font-size: 13px; line-height: 18px; color: var(--text-2); }
-.cm-pushcard .btn { flex: none; width: auto; height: 38px; padding: 0 16px; font-size: 14px; }
+.cm-pushcard .btn { flex: none; width: auto; height: 38px; line-height: 38px; padding: 0 16px; font-size: 14px; }
 .cm-pushline { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; color: var(--text-3); }
 .cm-pushline svg { width: 16px; height: 16px; }
 .cm-pushline span { flex: 1; }

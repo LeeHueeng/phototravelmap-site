@@ -1,0 +1,17 @@
+/* trips.css — 여행여권 웹의 '내 여행' 페이지(…/trips/)에만 쓰는 규칙. 원본은 webver/trips.css — 사이트의 trips/trips.css 는 scripts/build_web_community.py 가 복사한 것이다.
+   읽는 순서: base.css(앱 style.css 에서 뽑은 것) → planner.css(앱과 같은 파일) → ../community/web.css(머리 줄 · 아래 줄 · 웹 대화창) → 이 파일.
+   여행 화면(#pl-screen)은 앱처럼 화면을 가득 덮고, 본문은 가운데 560px 줄에 놓인다(넓은 화면에서도 같다). */
+.wv-trips-note { margin: -2px 0 12px; }
+.tripreco-seg { margin: 4px 0 14px; }
+.page[data-page="trip"] { width: 100%; box-sizing: border-box; min-height: 60vh; }
+/* 커뮤니티 스타일(community.css)이 없는 페이지라 머리 줄의 계정 동그라미와 웹 알림을 여기서 그린다 */
+.wv-me .cm-ava { flex: none; border-radius: 50%; background: var(--primary-weak); color: var(--primary-weak-text); display: grid; place-items: center; font-weight: 700; overflow: hidden; }
+#cm-toast { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 81; background: rgba(25,31,40,.92); color: #fff; font-size: 14px; line-height: 20px; padding: 10px 16px; border-radius: 999px; max-width: calc(100vw - 40px); text-align: center; pointer-events: none; }
+#wv-modal { z-index: 90; }   /* 확인 창은 여행 화면 · 시트(#pl-sheet 68) · 택시 카드(76)보다 위에 */
+.wv-foot { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }   /* 이 페이지에는 떠 있는 글쓰기 버튼이 없다 */
+/* 웹에서는 못 하는 것: 광고 보고 받기 · 앱 안 결제(이용권은 앱에서 받는다) */
+#pl-sheet [data-act="ai-ticket-ad"], #pl-sheet [data-act="ai-ticket-buy"] { display: none; }
+@media (min-width: 1024px) { .page[data-page="trip"] { max-width: 720px; } }   /* PC: 목록도 여행 화면(가운데 560px 줄)과 비슷한 폭으로 */
+@media (hover: hover) and (pointer: fine) {
+  .pl-pass[data-act], #pl-screen [data-act], #pl-sheet [data-act], #pl-list [data-act] { cursor: pointer; }
+}
