@@ -15,3 +15,6 @@
 @media (hover: hover) and (pointer: fine) {
   .pl-pass[data-act], #pl-screen [data-act], #pl-sheet [data-act], #pl-list [data-act] { cursor: pointer; }
 }
+/* 백업 파일(JSON)에서 여행 가져오기 — 목록 아래의 조용한 글자 버튼 */
+.wv-import { margin: 18px 0 0; text-align: center; }
+.wv-import button { background: none; border: 0; padding: 10px 12px; font: inherit; font-size: 14px; color: var(--grey600, #6b7684); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

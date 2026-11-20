@@ -24,7 +24,7 @@
 <link rel="stylesheet" href="base.css?v=be5a87cee0">
 <link rel="stylesheet" href="planner.css?v=02495b6da7">
 <link rel="stylesheet" href="../community/web.css?v=4cf85883cb">
-<link rel="stylesheet" href="trips.css?v=505736ded3">
+<link rel="stylesheet" href="trips.css?v=00e7daec68">
 <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "Organization", "@id": "https://hueeng.com/#organization", "name": "후엥", "alternateName": ["Hueeng", "후엥컴퍼니", "Hueeng Company"], "url": "https://hueeng.com", "email": "hi@hueeng.com", "founder": {"@type": "Person", "name": "이현우", "alternateName": ["Hyeonu Lee", "LeeHueeng"]}, "address": {"@type": "PostalAddress", "streetAddress": "신림동 412-109 B01호", "addressLocality": "관악구", "addressRegion": "서울특별시", "addressCountry": "KR"}, "vatID": "474-26-01971", "sameAs": ["https://github.com/LeeHueeng", "https://apps.apple.com/kr/developer/id1858238879", "https://play.google.com/store/apps/developer?id=Hueeng"]}, {"@type": "WebApplication", "@id": "https://leehueeng.github.io/phototravelmap-site/trips/#webapp", "url": "https://leehueeng.github.io/phototravelmap-site/trips/", "name": "여행여권 내 여행 — 일정 · 경비 · 일기를 웹에서 쓰고 고치기", "inLanguage": "ko-KR", "applicationCategory": "TravelApplication", "operatingSystem": "Web", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"}, "isPartOf": {"@id": "https://leehueeng.github.io/phototravelmap-site/#website"}, "publisher": {"@id": "https://hueeng.com/#organization"}, "description": "여행 일정을 짜고, 경비를 적고, 하루 일기를 남겨 보세요. 로그인하면 여행여권 앱과 같은 여행을 PC와 휴대폰 브라우저에서 이어서 쓰고 고칠 수 있어요."}]}</script>
 </head>
 <body data-wv-page="trips">
@@ -46,6 +46,7 @@
       <p class="pl-hint">불러오는 중…</p>
       <noscript><p class="pl-hint">여행을 보려면 브라우저의 자바스크립트를 켜 주세요.</p></noscript>
     </div>
+    <p class="wv-import"><button type="button" id="wv-import" hidden>백업 파일에서 여행 가져오기</button><input type="file" id="wv-import-file" accept=".json,application/json" hidden></p>
   </section>
 </main>
 <footer class="wv-foot">
@@ -63,7 +64,7 @@
 <div id="pl-toast" hidden></div>
 <div id="wv-modal" class="modal-root" hidden><div class="dim" id="wv-modal-dim"></div><div class="sheet" role="dialog" aria-modal="true"><div class="handle"></div><div id="wv-modal-body"></div></div></div>
 <div id="cm-toast" role="status" hidden></div>
-<script src="data.js?v=6d32ea56f1"></script>
+<script src="data.js?v=9978efed37"></script>
 <script src="icons.js?v=db6d75f1ae"></script>
 <script src="destinations.js?v=f435e0202d"></script>
 <script src="planner-data.js?v=1abedb2780"></script>
@@ -73,6 +74,6 @@
 <script src="planner-map.js?v=3b7ba749f8"></script>
 <script src="planner-gmap.js?v=757f5d898a"></script>
 <script src="planner.js?v=2a504193e9"></script>
-<script src="../community/web.js?v=3e72263bd7"></script>
+<script src="../community/web.js?v=cf91a74acf"></script>
 </body>
 </html>

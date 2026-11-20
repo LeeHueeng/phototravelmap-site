@@ -434,11 +434,40 @@ function exportDialog() {
   });
 }
 document.addEventListener('click', (e) => { const t = e.target; if (PAGE === 'trips' && t && t.closest && t.closest('#wv-export')) { if (root.Planner) root.Planner.back(); setTimeout(exportDialog, 0); } });
+// ---------- 백업 파일(JSON)에서 여행 가져오기(웹에만, 11-20 사용자: "json으로 업로드도 만들어줘") ----------
+// 위의 '백업 파일로 저장'으로 만든 파일을 골라 새 여행으로 담는다(있던 여행을 덮어쓰지 않는다 — 같은 파일을 두 번 넣으면 두 개가 된다).
+// 사진 · 올려 둔 파일은 백업에 없으므로 그 연결은 지운다. 계정 · 공유 연결(cloud · share · park)도 받지 않는다. 로그인해 있으면 새 여행으로 서버에 올라간다.
+const IMPORT_MAX = 5 * 1024 * 1024;
+function tripFromBackup(j, C) {
+  const src = j && typeof j === 'object' && j.app === 'travel-passport' && j.trip && typeof j.trip === 'object' && !Array.isArray(j.trip) ? j.trip : null; if (!src) return null;
+  const okId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v); const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  const ymd = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''); const cur = (v, d) => (typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : d);
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const recs = (v, photos) => (Array.isArray(v) ? v : []).filter((r) => r && typeof r === 'object' && !Array.isArray(r) && okId(r.id) && !r.del).slice(0, 5000).map((r) => { const o = Object.assign({}, r); if (photos) delete o.photos; return o; });
+  const t = C.newTrip({ title: str(src.title, 80), start: ymd(src.start), end: ymd(src.end), cur: cur(src.cur, 'KRW'), home: cur(src.home, 'KRW'),
+    dests: (Array.isArray(src.dests) ? src.dests : []).filter((d) => d && typeof d === 'object' && typeof d.name === 'string' && d.name).slice(0, 30),
+    budget: obj(src.budget), myRate: obj(src.myRate), rateMode: src.rateMode === 'mine' ? 'mine' : src.rateMode === 'auto' ? 'auto' : str(src.rateMode, 12) || 'auto',
+    people: recs(src.people), items: recs(src.items), bookings: recs(src.bookings), expenses: recs(src.expenses, true), diary: recs(src.diary, true), exchanges: recs(src.exchanges), checklist: recs(src.checklist), files: [] });
+  if (t.end && t.start && t.end < t.start) t.end = t.start;
+  if (okId(src.meId) && t.people.some((p) => p.id === src.meId)) t.meId = src.meId;
+  if (src.soloOpen === true) t.soloOpen = true; if (src.myBudget != null && (typeof src.myBudget === 'number' || typeof src.myBudget === 'string' || typeof src.myBudget === 'object')) t.myBudget = src.myBudget;
+  return t;
+}
+async function importBackup(file) {
+  const P = root.Planner; const D = P && P._debug; if (!D || !file) return;
+  let t = null;
+  try { if (file.size > IMPORT_MAX) throw new Error('too big'); t = tripFromBackup(JSON.parse(await file.text()), D.C); } catch (e) { tripsHost.nlog('import failed: ' + (e && e.message)); t = null; }
+  if (!t) { toast(tr('여행여권 백업 파일이 아니에요.')); return; }
+  try { D.ST.trips.push(t); await D.C.Store.put(t); } catch (e) { const i = D.ST.trips.indexOf(t); if (i >= 0) D.ST.trips.splice(i, 1); tripsHost.nlog('import save failed: ' + (e && e.message)); toast(tr('가져오지 못했어요.')); return; }
+  D.openTrip(t.id); toast(tr('여행을 가져왔어요. 사진은 들어 있지 않아요.'));
+  if (session && session.token) D.pushTrip(t).catch((e) => tripsHost.nlog('import push failed: ' + (e && (e.code || e.message))));
+}
 async function bootTrips() {
   const P = root.Planner; const login = await takeLoginResult();   // 주소 정리(로그인 코드는 커뮤니티 페이지가 받는다)
   if (!P || !root.PlannerCore) { const hint = $('#pl-list .pl-hint'); if (hint) hint.textContent = tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.'); return; }
   $$w('[data-tripseg] button').forEach((b) => b.addEventListener('click', () => { $$w('[data-tripseg] button').forEach((x) => x.classList.toggle('on', x === b)); P.listView(b.dataset.v === 'past' ? 'past' : 'now'); }));
   P.init(tripsHost);
+  { const btn = $('#wv-import'), inp = $('#wv-import-file'); if (btn && inp) { btn.hidden = false; btn.addEventListener('click', () => { inp.value = ''; inp.click(); }); inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (f) importBackup(f); }); } }
   if (root.PlannerGMap) { root.PlannerGMap.log = tripsHost.nlog; if (root.PlannerGMap.on()) root.PlannerGMap.ready(); }   // 구글 지도 스크립트를 미리 불러 둔다(앱의 Planner.show 와 같은 일)
   if (root.MutationObserver) { const mo = new MutationObserver(() => { addExportRow(); syncHistory(); }); mo.observe($('#pl-sheet'), { attributes: true, attributeFilter: ['hidden'] }); mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] }); }   // 시트 · 택시 카드 · 크게 본 사진이 열리고 닫힐 때
   setTimeout(() => { const sc = document.createElement('script'); sc.src = 'data/cities.js?v=' + encodeURIComponent(CFG.citiesV || ''); sc.async = true; document.head.appendChild(sc); }, 1200);   // 여행지 찾기에 쓰는 도시 이름(크다 — 화면이 뜬 뒤에 받는다. 받기 전에는 인기 여행지만 찾아진다)
