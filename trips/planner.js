@@ -670,11 +670,11 @@ async function picSync() {
 const picSoon = (ms) => { clearTimeout(PIC.t); PIC.t = setTimeout(picSync, ms == null ? 4000 : ms); };
 const photo = (x) => (hasImg(x) ? `<img class="pl-thumb sm" ${picAttrs(x.img)} alt="" loading="lazy">` : '');   // 일정 줄: 사진이 있을 때만(폰에 저장해 둔 사진이 먼저)
 const thumb = (x) => (hasImg(x) ? `<img class="pl-thumb" src="${esc(x.img)}" alt="" loading="lazy">` : `<span class="pl-thumb ic">${x && x.src === 'city' ? CITY_SVG : PIN_SVG}</span>`);   // 검색 결과 줄: 없으면 아이콘
-function itemSub(it) {
+function itemSub(it, noTime) {   // noTime: 시각을 왼쪽 열에 따로 적는 날(dayBlock 의 timed)
   const a = [];
   if (it.stayId) a.push(esc(tr('숙소')));
   if (it.wayId) a.push(esc(it.wayEnd === 'from' ? tr('출발지') : tr('도착지')));
-  if (it.time) a.push(`<span class="t">${esc(it.time)}</span>`);
+  if (it.time && !noTime) a.push(`<span class="t">${esc(it.time)}</span>`);
   if (Number.isFinite(it.stay) && it.stay !== C.STAY_DEFAULT) a.push(esc(tr('{t} 머묾', { t: durText(it.stay) })));
   if (it.done) a.push(`<span class="ok">${esc(tr('방문 완료'))}</span>`);
   if (it.est && it.est.amt > 0) a.push(esc(tr('약 {m}', { m: money(it.est.amt, it.est.cur || 'KRW') })));   // AI 가 어림한 비용
@@ -695,21 +695,28 @@ function dayBlock(t, d, idx, overview) {
   if (!overview && p.totalMin > OVER_MIN) h += `<div class="pl-warn">${esc(tr('이동까지 합쳐 약 {t}이에요. 하루에 담기엔 빡빡할 수 있어요.', { t: durText(p.totalMin) }))}</div>`;
   // 그 날의 뼈대: 가는 방법의 단계(첫날 맨 위) → [장소들] → 오는 방법의 단계(마지막 날 맨 아래). 숙소는 아래 '숙소 추가하기'로 불러와 장소로 넣는다
   const go = overview ? [] : C.ways(t, 'go').filter(b => C.wayDay(t, b) === d), back = overview ? [] : C.ways(t, 'back').filter(b => C.wayDay(t, b) === d);
-  const wayRow = (b) => `<li class="pl-way" data-act="way-edit" data-id="${esc(b.id)}"><span class="pl-way-ic">${MOVE_ICON[b.mode] || MOVE_ICON.auto}</span><div class="pl-way-body"><div class="pl-way-title">${esc(wayTitle(b))}</div><div class="pl-way-sub">${esc(waySub(t, b))}</div></div><span class="chev"></span></li>`;
+  // 시각을 적어 둔 날은 왼쪽에 시각 열을 둔다(시간표처럼 위에서 아래로 읽힌다). 가는 · 오는 편의 줄에는 그 날 떠나는 시각
+  const timed = p.items.some(i => i.time); const tcell = (v) => (timed ? `<span class="pl-time">${esc(v || '')}</span>` : '');
+  const wayTime = (b) => { const v = String(b.start || ''); return v.length > 10 && v.slice(0, 10) === d ? v.slice(11, 16) : ''; };
+  const itemTime = (it) => {   // 자동으로 든 도착지 · 출발지는 그 편의 도착 · 출발 시각
+    if (it.time || !it.wayId) return it.time || ''; const b = (t.bookings || []).find(x => x.id === it.wayId && !x.del); const v = b ? String((it.wayEnd === 'from' ? b.start : b.end) || '') : ''; return v.length > 10 ? v.slice(11, 16) : '';
+  };
+  const wayRow = (b) => `<li class="pl-way" data-act="way-edit" data-id="${esc(b.id)}">${tcell(wayTime(b))}<span class="pl-way-ic">${MOVE_ICON[b.mode] || MOVE_ICON.auto}</span><div class="pl-way-body"><div class="pl-way-title">${esc(wayTitle(b))}</div><div class="pl-way-sub">${esc(waySub(t, b))}</div></div><span class="chev"></span></li>`;
   const pre = go.map(wayRow).join('') + (overview ? '' : wayAddHtml(t, go[go.length - 1], 'to', p.items)), post = (overview ? '' : wayAddHtml(t, back[0], 'from', p.items)) + back.map(wayRow).join('');
-  if (!p.items.length) h += (pre || post ? `<ol class="pl-tl">${pre}${post}</ol>` : '') + `<p class="pl-hint">${esc(overview ? tr('아직 일정이 없어요.') : tr('아직 일정이 없어요. 아래 버튼으로 가고 싶은 곳을 담아 보세요.'))}</p>`;
+  const ol = `<ol class="pl-tl${timed ? ' timed' : ''}">`;
+  if (!p.items.length) h += (pre || post ? `${ol}${pre}${post}</ol>` : '') + `<p class="pl-hint">${esc(overview ? tr('아직 일정이 없어요.') : tr('아직 일정이 없어요. 아래 버튼으로 가고 싶은 곳을 담아 보세요.'))}</p>`;
   else {
     let no = 0; const N = p.items.length;   // 자동으로 둔 시작(도착지)·끝(출발지)은 순서를 바꾸지 않는다
     const pinA = !t.sample && !!p.items[0].wayId && p.items[0].wayEnd !== 'from', pinZ = !t.sample && !!p.items[N - 1].wayId && p.items[N - 1].wayEnd === 'from';
     const noUp = (i) => i === 0 || (pinA && i === 1) || (pinZ && i === N - 1), noDown = (i) => i === N - 1 || (pinZ && i === N - 2) || (pinA && i === 0);
-    h += '<ol class="pl-tl">' + pre + p.items.map((it, i) => {
-      const note = it.kind === 'note'; const ic = note ? '' : itemIcon(t, it); if (!note && !ic) no++; const sub = itemSub(it);
-      let row = `<li class="pl-item" data-act="item" data-id="${esc(it.id)}"><span class="pl-num ${it.done ? 'done' : ''} ${note ? 'note' : ''} ${ic ? 'ic' : ''}" ${!it.done && !note ? `style="background:${it.stayId ? STAY_COLOR : it.wayId ? WAY_COLOR : color}"` : ''}>${note ? '' : (ic || no)}</span><div class="pl-item-body"><div class="pl-item-title">${esc(it.name)}</div>${sub ? `<div class="pl-item-sub">${sub}</div>` : ''}</div>${photo(it)}`;
+    h += ol + pre + p.items.map((it, i) => {
+      const note = it.kind === 'note'; const ic = note ? '' : itemIcon(t, it); if (!note && !ic) no++; const sub = itemSub(it, timed);
+      let row = `<li class="pl-item" data-act="item" data-id="${esc(it.id)}">${tcell(itemTime(it))}<span class="pl-num ${it.done ? 'done' : ''} ${note ? 'note' : ''} ${ic ? 'ic' : ''}" ${!it.done && !note ? `style="background:${it.stayId ? STAY_COLOR : it.wayId ? WAY_COLOR : color}"` : ''}>${note ? '' : (ic || no)}</span><div class="pl-item-body"><div class="pl-item-title">${esc(it.name)}</div>${sub ? `<div class="pl-item-sub">${sub}</div>` : ''}</div>${photo(it)}`;
       row += (ST.edit && !overview) ? `<span class="pl-ord"><button type="button" data-act="up" data-id="${esc(it.id)}" ${noUp(i) ? 'disabled' : ''} aria-label="${esc(tr('위로'))}">▲</button><button type="button" data-act="down" data-id="${esc(it.id)}" ${noDown(i) ? 'disabled' : ''} aria-label="${esc(tr('아래로'))}">▼</button></span>` : '<span class="chev"></span>';
       row += '</li>';
       if (i < p.items.length - 1 && !overview) {
-        const leg = p.legs[i];
-        row += leg ? `<li class="pl-leg ${leg.chosen ? 'set' : ''}" data-act="leg" data-id="${esc(it.id)}"><i class="pl-leg-ic">${legIcon(leg)}</i><span>${esc(legText(leg))}</span>${C.hasLL(it) && C.hasLL(p.items[i + 1]) ? `<button type="button" data-act="route" data-id="${esc(it.id)}">${esc(tr('길찾기'))}</button>` : ''}</li>` : `<li class="pl-leg" data-act="leg" data-id="${esc(it.id)}"><i class="pl-leg-ic">${MOVE_ICON.auto}</i><span>${esc(tr('이동 수단 정하기'))}</span></li>`;
+        const leg = p.legs[i];   // 정해 둔 것도, 어림할 거리도 없는 구간은 줄을 두지 않는다(줄마다 '이동 수단 정하기'가 끼어 일정이 안 읽혔다). 그런 구간은 일정 한 건의 시트에서 정한다
+        if (leg) row += `<li class="pl-leg ${leg.chosen ? 'set' : ''}" data-act="leg" data-id="${esc(it.id)}"><i class="pl-leg-ic">${legIcon(leg)}</i><span>${esc(legText(leg))}</span>${C.hasLL(it) && C.hasLL(p.items[i + 1]) ? `<button type="button" data-act="route" data-id="${esc(it.id)}">${esc(tr('길찾기'))}</button>` : ''}</li>`;
       }
       return row;
     }).join('') + post + '</ol>';
@@ -775,7 +782,12 @@ function mountPlanMap(t) {
     m.on('marker', (mk) => (String(mk.id).indexOf('stay:') === 0 ? staySheet(String(mk.id).slice(5)) : itemSheet(mk.id)));
   }, { get: () => map, set: (m) => { map = m; } });
 }
-ACT.day = (d) => { ST.day = d.v === 'all' ? 'all' : d.v === 'wish' ? null : d.v; ST.edit = false; ST.mapOn = false; renderScreen(); };
+ACT.day = (d) => {
+  const el = $('#pl-screen'); const y = el ? el.scrollTop : 0;
+  ST.day = d.v === 'all' ? 'all' : d.v === 'wish' ? null : d.v; ST.edit = false; ST.mapOn = false; renderScreen(true);
+  // 날짜 줄(.pl-days)은 화면을 내려도 위에 붙어 있다. 내려 둔 채로 날짜를 바꾸면 그 날의 처음(날짜 줄 바로 아래)부터 보이게 한다
+  const ch = $('#pl-screen .pl-days'), top = $('#pl-screen .sd-top'); if (el && ch && y > 0) el.scrollTop = Math.min(y, Math.max(0, ch.offsetTop - (top ? top.offsetHeight : 0)));
+};
 // 지도는 한 번 눌러야 움직인다(화면을 내리려다 지도가 잡히는 일을 막는다). 화면을 다시 내리면 잠긴다
 ACT['map-on'] = (d, el) => { ST.mapOn = true; el.hidden = true; };
 ACT['day-apps'] = () => {   // 더 보기의 '지도 앱으로 보기': 앱을 고르면 일정의 장소를 하나씩 여는 목록
@@ -825,6 +837,7 @@ ACT['distribute-ok'] = () => {
 // 일정 한 건
 function itemSheet(id) {
   const t = trip(); const it = t.items.find(x => x.id === id); if (!it) return; const days = C.tripDays(t);
+  const pr = legPair(id); let lg = null; if (pr) { const dp = C.dayPlan(t, it.day); lg = dp.legs[dp.items.findIndex(x => x.id === id)] || null; }   // 다음 일정까지 이동(같은 날의 다음 줄이 있을 때)
   sheet(`<div class="pl-place">${hasImg(it) ? `<img class="pl-thumb lg" ${picAttrs(it.img)} alt="">` : ''}<div class="pl-place-body"><div class="sheet-title">${esc(it.name)}</div>${it.addr ? `<p class="desc">${esc(it.addr)}</p>` : ''}</div></div>
     ${C.hasLL(it) ? `<div class="pl-place-acts">${(ST.apps = mapApps(it, null)).map((x, i) => `<button type="button" class="chip" data-act="map-app" data-i="${i}">${esc(tr(x[0]))}</button>`).join('')}</div>` : ''}
     <div class="field"><label for="pl-i-name">${esc(tr('이름'))}</label><input id="pl-i-name" maxlength="60" value="${esc(it.name)}"></div>
@@ -832,17 +845,29 @@ function itemSheet(id) {
     <div class="pl-flabel">${esc(tr('도착 시각(정해졌을 때만)'))}</div><div class="field"><input id="pl-i-time" type="time" value="${esc(it.time || '')}"></div>
     <div class="pl-flabel">${esc(tr('머무는 시간'))}</div><div class="chips small" id="pl-i-stay">${[30, 60, 90, 120, 180, 240].map(m => `<button type="button" class="chip ${(Number.isFinite(it.stay) ? it.stay : C.STAY_DEFAULT) === m ? 'active' : ''}" data-v="${m}">${esc(durText(m))}</button>`).join('')}</div>
     <div class="pl-flabel">${esc(tr('메모'))}</div><div class="field"><textarea id="pl-i-memo" rows="2" maxlength="300">${esc(it.memo || '')}</textarea></div>
+    ${pr ? `<div class="pl-flabel">${esc(tr('다음 일정까지 이동'))}</div><button type="button" class="pl-legrow ${lg && lg.chosen ? 'set' : ''}" data-act="item-leg" data-id="${esc(id)}"><i class="pl-leg-ic">${legIcon(lg)}</i><span class="pl-legrow-t">${esc(lg ? legText(lg) : tr('이동 수단 정하기'))}</span><span class="pl-legrow-s">→ ${esc(pr[1].name)}</span><span class="chev"></span></button>` : ''}
     <div class="pl-sheet-acts"><button type="button" class="btn secondary" data-act="item-done" data-id="${esc(id)}">${esc(it.done ? tr('방문 취소') : tr('방문 완료'))}</button><button type="button" class="btn primary" data-act="item-save" data-id="${esc(id)}">${esc(tr('저장'))}</button></div>
     <button type="button" class="pl-link-danger" data-act="item-del" data-id="${esc(id)}">${esc(tr('일정에서 빼기'))}</button>`, () => { chipGroup('#pl-i-day'); chipGroup('#pl-i-stay'); });
 }
 ACT.item = (d) => itemSheet(d.id);
-ACT['item-save'] = (d) => {
-  const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it) return;
-  const name = $('#pl-i-name').value.trim(); if (!name) { toast(tr('이름을 적어 주세요.')); return; }
-  const day = chipVal('#pl-i-day') || null; const stay = +chipVal('#pl-i-stay') || C.STAY_DEFAULT;
+/** 시트에 적은 것을 일정에 옮긴다. 이름이 비면 false. quiet: 바뀐 것이 없으면 건드리지 않는다(쓸데없이 서버에 올리지 않게) → 바뀌었으면 'changed' */
+function readItemForm(t, it, quiet) {
+  const name = $('#pl-i-name').value.trim(); if (!name) { toast(tr('이름을 적어 주세요.')); return false; }
+  const day = chipVal('#pl-i-day') || null; const stay = +chipVal('#pl-i-stay') || (Number.isFinite(it.stay) ? it.stay : C.STAY_DEFAULT);   // 고르는 칸에 없는 시간(예: 70분)은 누르지 않으면 그대로 둔다(전에는 저장할 때 1시간으로 바뀌었다)
+  const time = $('#pl-i-time').value || '', memo = $('#pl-i-memo').value.trim();
+  if (quiet && name === it.name && day === (it.day || null) && time === (it.time || '') && stay === (Number.isFinite(it.stay) ? it.stay : C.STAY_DEFAULT) && memo === (it.memo || '')) return true;
   if ((it.day || null) !== day) { const last = C.dayItems(t, day).pop(); it.day = day; it.sort = C.midKey(last ? last.sort : '', ''); }
-  it.name = name; it.time = $('#pl-i-time').value || ''; it.stay = stay; it.memo = $('#pl-i-memo').value.trim();
-  C.touch(it); persist(t); closeSheet(); renderScreen();
+  it.name = name; it.time = time; it.stay = stay; it.memo = memo;
+  C.touch(it); return 'changed';
+}
+ACT['item-save'] = (d) => {
+  const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it || !readItemForm(t, it)) return;
+  persist(t); closeSheet(); renderScreen();
+};
+ACT['item-leg'] = (d) => {   // 시트의 '다음 일정까지 이동': 적던 것은 저장해 두고 구간 시트로 넘어간다
+  const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it) return; const r = readItemForm(t, it, true); if (!r) return;
+  if (r === 'changed') { persist(t); renderScreen(); }
+  if (legPair(d.id)) ACT.leg(d); else closeSheet();   // 날짜를 옮겨 다음 일정이 없어졌으면 닫는다
 };
 ACT['item-done'] = (d) => { const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it) return; it.done = !it.done; it.auto = false; C.touch(it); persist(t); closeSheet(); renderScreen(); };
 ACT['item-del'] = (d) => { const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it) return; it.del = true; C.touch(it);
@@ -851,7 +876,7 @@ ACT['item-del'] = (d) => { const t = trip(); const it = t.items.find(x => x.id =
 ACT['item-map'] = (d) => { const it = trip().items.find(x => x.id === d.id); if (it) mapAppSheet(it, null); };
 
 // 이동 한 구간
-function legPair(id) { const items = C.dayItems(trip(), ST.day); const i = items.findIndex(x => x.id === id); return i >= 0 && i + 1 < items.length ? [items[i], items[i + 1]] : null; }
+function legPair(id) { const t = trip(); const it = t && t.items.find(x => x.id === id && !x.del); if (!it || !it.day) return null; const items = C.dayItems(t, it.day); const i = items.findIndex(x => x.id === id); return i >= 0 && i + 1 < items.length ? [items[i], items[i + 1]] : null; }   // 그 일정과 같은 날의 다음 일정
 // 구간(장소 → 다음 장소): 이동 수단 · 걸리는 시간 · 요금 · 메모를 고른다. 수단을 고르면 그 수단으로 시간을 어림한다
 ACT.leg = (d) => {
   const t = trip(); const pr = legPair(d.id); if (!pr) return; const [a, b] = pr; const L = C.legOf(a, b) || {};

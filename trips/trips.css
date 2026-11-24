@@ -18,3 +18,22 @@
 /* 백업 파일(JSON)에서 여행 가져오기 — 목록 아래의 조용한 글자 버튼 */
 .wv-import { margin: 18px 0 0; text-align: center; }
 .wv-import button { background: none; border: 0; padding: 10px 12px; font: inherit; font-size: 14px; color: var(--grey600, #6b7684); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+/* ---------- PC(넓은 화면)에서 일정 보기 ----------
+   전에는 넓은 화면에서도 가운데 560px 한 줄이라 지도가 작고 내리면 사라졌다. 1100px 부터는 왼쪽에 일정, 오른쪽에 지도(내려도 그 자리에 붙어 있다).
+   지도가 있는 화면(일정 구역)에만 건다 — 경비 · 일기 · 준비는 가운데 한 줄 그대로다. 머리 줄 · 아래 탭은 본문 폭에 맞춘다. */
+@media (min-width: 1100px) {
+  #pl-screen .pl-top { padding-left: max(16px, calc((100vw - 1240px) / 2 + 12px)); padding-right: max(4px, calc((100vw - 1240px) / 2 + 8px)); }
+  #pl-screen .pl-tabs { justify-content: center; }
+  #pl-screen .pl-tabs button { flex: 0 1 136px; }
+  #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) { max-width: 1240px; display: grid; grid-template-columns: minmax(0, 540px) minmax(0, 1fr); column-gap: 36px; align-content: start; }
+  #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > * { grid-column: 1; min-width: 0; }
+  #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > .pl-days { position: static; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; flex-wrap: wrap; overflow: visible; }   /* 날짜 칩은 옆으로 밀지 않고 줄을 바꾼다. 여러 줄이 될 수 있어 위에 붙이지 않는다 */
+  #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > .pl-mapbox { grid-column: 2; grid-row: 1 / span 900; align-self: start; position: sticky; top: 66px; height: calc(100vh - 66px - var(--pl-tabs-h) - 24px); min-height: 320px; margin: 0; }
+}
+@media (min-width: 1100px) and (hover: hover) and (pointer: fine) {
+  #pl-screen .pl-mapguard { display: none; }   /* 마우스로는 화면을 내리다 지도가 잡힐 일이 없다 — 누르지 않아도 바로 움직인다 */
+}
+@media (hover: hover) and (pointer: fine) {
+  #pl-screen .pl-item:hover, #pl-screen .pl-way:hover { background: var(--fill); }
+  #pl-screen .pl-leg[data-act]:hover { color: var(--text-2); }
+}
