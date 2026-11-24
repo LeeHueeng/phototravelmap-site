@@ -371,7 +371,7 @@ if (PAGE === 'trips' && !root.PhotoMapEngine) root.PhotoMapEngine = { TILE_STYLE
 // 파일은 이 브라우저 안에서 만들어 내려받는다(서버로 보내지 않는다). 일기 사진은 이 브라우저에 있는 것만 문서에 들어간다.
 function addExportRow() {
   const del = $('#pl-sheet-body [data-act="trip-del"]'); if (!del || !$('#pl-sheet-body [data-act="trip-edit"]') || $('#wv-export')) return;
-  const li = del.closest('li') || del; li.insertAdjacentHTML('beforebegin', `<li class="row tap" id="wv-export" role="button" tabindex="0"><div class="row-body"><div class="row-title">${esc(tr('여행 내보내기'))}</div><div class="row-desc">${esc(tr('문서 · 경비 표 · 백업 파일로 저장해요'))}</div></div><span class="chev"></span></li>`);
+  const li = del.closest('li') || del; li.insertAdjacentHTML('beforebegin', `<li class="row tap" id="wv-export" role="button" tabindex="0"><div class="row-body"><div class="row-title">${esc(tr('여행 내보내기'))}</div><div class="row-desc">${esc(tr('문서 · 경비 표 · 백업 파일로 저장해요'))}</div></div><span class="chev"></span></li><li class="row tap" id="wv-patch" role="button" tabindex="0"><div class="row-body"><div class="row-title">${esc(tr('백업 파일로 이 여행 고치기'))}</div><div class="row-desc">${esc(tr('JSON 파일의 내용으로 일정 · 경비 · 일기를 바꿔요'))}</div></div><span class="chev"></span></li>`);
 }
 const fileBase = (t) => (String(t.title || tr('여행')).replace(/[\\/:*?"<>|\n\r]+/g, ' ').trim().slice(0, 40) || 'trip');
 const dayText = (v) => { const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(String(v || '')); if (!m) return ''; try { return new Intl.DateTimeFormat(I18N.locale, { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' }).format(new Date(+m[1], +m[2] - 1, +m[3])); } catch (e) { return m[0]; } };
@@ -434,33 +434,95 @@ function exportDialog() {
   });
 }
 document.addEventListener('click', (e) => { const t = e.target; if (PAGE === 'trips' && t && t.closest && t.closest('#wv-export')) { if (root.Planner) root.Planner.back(); setTimeout(exportDialog, 0); } });
+document.addEventListener('click', (e) => { const t = e.target; if (PAGE === 'trips' && t && t.closest && t.closest('#wv-patch')) { const inp = $('#wv-patch-file'); if (inp) { inp.value = ''; inp.click(); } if (root.Planner) root.Planner.back(); } });
 // ---------- 백업 파일(JSON)에서 여행 가져오기(웹에만, 11-20 사용자: "json으로 업로드도 만들어줘") ----------
 // 위의 '백업 파일로 저장'으로 만든 파일을 골라 새 여행으로 담는다(있던 여행을 덮어쓰지 않는다 — 같은 파일을 두 번 넣으면 두 개가 된다).
 // 사진 · 올려 둔 파일은 백업에 없으므로 그 연결은 지운다. 계정 · 공유 연결(cloud · share · park)도 받지 않는다. 로그인해 있으면 새 여행으로 서버에 올라간다.
 const IMPORT_MAX = 5 * 1024 * 1024;
+// 파일은 손으로 써도 된다: 기록의 id 는 없어도 되고(새로 매긴다), 일정의 sort 가 없으면 파일에 적힌 순서대로 놓는다.
+const BK = {
+  id: (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v), str: (v, n) => (typeof v === 'string' ? v.slice(0, n) : ''),
+  ymd: (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''), cur: (v, d) => (typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : d),
+  obj: (v) => !!v && typeof v === 'object' && !Array.isArray(v),
+  src: (j) => (BK.obj(j) && j.app === 'travel-passport' && BK.obj(j.trip) ? j.trip : null),
+  dests: (v) => (Array.isArray(v) ? v : []).filter((d) => BK.obj(d) && typeof d.name === 'string' && d.name).slice(0, 30),
+  SECS: ['items', 'expenses', 'bookings', 'diary', 'exchanges', 'checklist'],
+};
+/** 파일의 한 묶음(일정 · 경비 …)을 앱이 쓰는 모양으로 고른다. 지운 기록 · 이상한 기록은 버리고, 사진 연결은 받지 않는다. x = { cur, me, start } */
+function backupRecs(key, arr, C, x) {
+  const seen = new Set(); const out = []; const now = C.now();
+  for (const r0 of (Array.isArray(arr) ? arr : []).slice(0, 5000)) {
+    if (!BK.obj(r0) || r0.del) continue; const r = Object.assign({}, r0); delete r.photos; delete r.del;
+    if (r.id == null || r.id === '') r.id = C.uid(); else if (!BK.id(r.id) || seen.has(r.id)) continue;
+    if (key === 'people') { if (typeof r.name !== 'string') continue; r.name = r.name.slice(0, 40); }
+    else if (key === 'items') { if (typeof r.name !== 'string' || !r.name.trim()) continue; if (typeof r.kind !== 'string') r.kind = 'place'; r.day = BK.ymd(r.day) || null; if (typeof r.sort !== 'string' || !/^[0-9a-z]{1,40}$/.test(r.sort)) delete r.sort; }
+    else if (key === 'expenses') {
+      const a = typeof r.amt === 'number' ? r.amt : parseFloat(String(r.amt == null ? '' : r.amt).replace(/[^\d.]/g, '')); if (!Number.isFinite(a) || a < 0) continue;
+      r.amt = a; r.cur = BK.cur(r.cur, x.cur); r.day = BK.ymd(r.day) || x.start || C.today(); if (!['food', 'move', 'shop', 'sight', 'stay', 'etc'].includes(r.cat)) r.cat = 'etc';
+      if (!['cash', 'card', 'tcard', 'pay'].includes(r.method)) r.method = 'card'; if (typeof r.basis !== 'string') r.basis = 'auto'; r.memo = BK.str(r.memo, 500); if (!BK.id(r.payer) && x.me) r.payer = x.me;
+    }
+    else if (key === 'diary') { r.day = BK.ymd(r.day); if (!r.day) continue; r.title = BK.str(r.title, 200); r.text = BK.str(r.text, 20000); if (!r.title && !r.text) continue; }
+    else if (key === 'checklist') { if (typeof r.title !== 'string' || !r.title.trim()) continue; r.kind = r.kind === 'todo' ? 'todo' : 'pack'; r.done = !!r.done; }
+    if (typeof r.c !== 'number') r.c = now; if (typeof r.u !== 'number') r.u = now;
+    seen.add(r.id); out.push(r);
+  }
+  if (key === 'items' && out.some((r) => !r.sort)) { const by = {}; for (const r of out) (by[r.day || ''] = by[r.day || ''] || []).push(r); for (const k of Object.keys(by)) { const ks = C.seqKeys(by[k].length); by[k].forEach((r, i) => { r.sort = ks[i]; }); } }
+  return out;
+}
 function tripFromBackup(j, C) {
-  const src = j && typeof j === 'object' && j.app === 'travel-passport' && j.trip && typeof j.trip === 'object' && !Array.isArray(j.trip) ? j.trip : null; if (!src) return null;
-  const okId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v); const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
-  const ymd = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''); const cur = (v, d) => (typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : d);
-  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
-  const recs = (v, photos) => (Array.isArray(v) ? v : []).filter((r) => r && typeof r === 'object' && !Array.isArray(r) && okId(r.id) && !r.del).slice(0, 5000).map((r) => { const o = Object.assign({}, r); if (photos) delete o.photos; return o; });
-  const t = C.newTrip({ title: str(src.title, 80), start: ymd(src.start), end: ymd(src.end), cur: cur(src.cur, 'KRW'), home: cur(src.home, 'KRW'),
-    dests: (Array.isArray(src.dests) ? src.dests : []).filter((d) => d && typeof d === 'object' && typeof d.name === 'string' && d.name).slice(0, 30),
-    budget: obj(src.budget), myRate: obj(src.myRate), rateMode: src.rateMode === 'mine' ? 'mine' : src.rateMode === 'auto' ? 'auto' : str(src.rateMode, 12) || 'auto',
-    people: recs(src.people), items: recs(src.items), bookings: recs(src.bookings), expenses: recs(src.expenses, true), diary: recs(src.diary, true), exchanges: recs(src.exchanges), checklist: recs(src.checklist), files: [] });
+  const src = BK.src(j); if (!src) return null;
+  const t = C.newTrip({ title: BK.str(src.title, 80), start: BK.ymd(src.start), end: BK.ymd(src.end), cur: BK.cur(src.cur, 'KRW'), home: BK.cur(src.home, 'KRW'), dests: BK.dests(src.dests),
+    budget: BK.obj(src.budget) ? src.budget : {}, myRate: BK.obj(src.myRate) ? src.myRate : {}, rateMode: BK.str(src.rateMode, 12) || 'auto', people: backupRecs('people', src.people, C, {}), files: [] });
   if (t.end && t.start && t.end < t.start) t.end = t.start;
-  if (okId(src.meId) && t.people.some((p) => p.id === src.meId)) t.meId = src.meId;
-  if (src.soloOpen === true) t.soloOpen = true; if (src.myBudget != null && (typeof src.myBudget === 'number' || typeof src.myBudget === 'string' || typeof src.myBudget === 'object')) t.myBudget = src.myBudget;
+  if (BK.id(src.meId) && t.people.some((p) => p.id === src.meId)) t.meId = src.meId; C.ensureMe(t, '');
+  const x = { cur: t.cur, me: t.meId, start: t.start }; for (const k of BK.SECS) t[k] = backupRecs(k, src[k], C, x);
+  if (src.soloOpen === true) t.soloOpen = true; if (src.myBudget != null && typeof src.myBudget !== 'function') t.myBudget = src.myBudget;
   return t;
 }
+/** 열려 있는 여행 t 를 파일 내용으로 고친다(11-24 사용자: "json으로 기존 일정도 수정할수 있게 해").
+    파일에 적힌 것만 바꾼다: 제목 · 날짜 같은 값은 적힌 것만, 묶음(items · expenses · bookings · diary · exchanges · checklist)은 파일에 그 묶음이 있으면 통째로 —
+    id 가 같은 기록은 고치고, 새 기록은 넣고, 파일에 없는 기록은 지운다(지운 표시 → 서버 · 다른 기기에도 전해진다). 사진 연결은 지금 것을 그대로 둔다.
+    함께 가는 사람(people)은 이름을 고치거나 더하기만 한다(지우지 않는다 — 경비의 낸 사람 · 계정 연결이 걸려 있다). */
+function applyBackup(t, src, C) {
+  const now = C.now(); let meta = false; const set = (k, v) => { if (JSON.stringify(t[k]) !== JSON.stringify(v)) { t[k] = v; meta = true; } };
+  if (typeof src.title === 'string' && src.title.trim()) set('title', src.title.trim().slice(0, 80));
+  const a = src.start !== undefined ? BK.ymd(src.start) : t.start, b = src.end !== undefined ? BK.ymd(src.end) : t.end; if ((src.start !== undefined || src.end !== undefined) && a && b && a <= b) { set('start', a); set('end', b); }
+  if (Array.isArray(src.dests)) set('dests', BK.dests(src.dests)); if (BK.cur(src.cur, '')) set('cur', src.cur); if (BK.cur(src.home, '')) set('home', src.home); if (BK.obj(src.budget)) set('budget', src.budget);
+  if (meta) t.mu = now;
+  if (BK.obj(src.myRate)) t.myRate = src.myRate; if (typeof src.rateMode === 'string') t.rateMode = src.rateMode.slice(0, 12); if (src.myBudget != null && typeof src.myBudget !== 'function') t.myBudget = src.myBudget;
+  if (Array.isArray(src.people)) for (const r of backupRecs('people', src.people, C, {})) { const o = (t.people || []).find((p) => p.id === r.id && !p.del); if (!o) { r.u = now; t.people.push(r); } else if (r.name && o.name !== r.name) { o.name = r.name; o.u = now; } }
+  const x = { cur: t.cur, me: t.meId, start: t.start }; const bare = (r) => { const o = Object.assign({}, r); delete o.u; return JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]])); };
+  for (const key of BK.SECS) {
+    if (!Array.isArray(src[key])) continue; const list = t[key] = t[key] || []; const raw = src[key].map((r) => (BK.obj(r) ? Object.assign({}, r) : r));
+    if (key === 'diary') for (const r of raw) if (BK.obj(r) && (r.id == null || r.id === '')) { const o = list.find((e) => !e.del && e.day === r.day); if (o) r.id = o.id; }   // id 없이 적은 일기는 같은 날의 일기를 고친다(하루에 하나)
+    const keep = new Set();
+    for (const r of backupRecs(key, raw, C, x)) {
+      keep.add(r.id); const i = list.findIndex((o) => o.id === r.id);
+      if (i < 0) { r.u = now; list.push(r); continue; }
+      const o = list[i]; const n = Object.assign({}, r, { c: o.c || r.c, u: o.u || now }); if (Array.isArray(o.photos) && o.photos.length) n.photos = o.photos;
+      if (o.del || bare(o) !== bare(n)) { n.u = now; list[i] = n; }
+    }
+    for (const o of list) if (!keep.has(o.id) && !o.del) { o.del = true; o.u = now; }
+  }
+}
+async function readBackup(file) { try { if (file.size > IMPORT_MAX) throw new Error('too big'); return JSON.parse(await file.text()); } catch (e) { tripsHost.nlog('import failed: ' + (e && e.message)); return null; } }
 async function importBackup(file) {
   const P = root.Planner; const D = P && P._debug; if (!D || !file) return;
-  let t = null;
-  try { if (file.size > IMPORT_MAX) throw new Error('too big'); t = tripFromBackup(JSON.parse(await file.text()), D.C); } catch (e) { tripsHost.nlog('import failed: ' + (e && e.message)); t = null; }
+  let t = null; try { t = tripFromBackup(await readBackup(file), D.C); } catch (e) { tripsHost.nlog('import failed: ' + (e && e.message)); t = null; }
   if (!t) { toast(tr('여행여권 백업 파일이 아니에요.')); return; }
   try { D.ST.trips.push(t); await D.C.Store.put(t); } catch (e) { const i = D.ST.trips.indexOf(t); if (i >= 0) D.ST.trips.splice(i, 1); tripsHost.nlog('import save failed: ' + (e && e.message)); toast(tr('가져오지 못했어요.')); return; }
   D.openTrip(t.id); toast(tr('여행을 가져왔어요. 사진은 들어 있지 않아요.'));
   if (session && session.token) D.pushTrip(t).catch((e) => tripsHost.nlog('import push failed: ' + (e && (e.code || e.message))));
+}
+async function patchFromBackup(file) {
+  const P = root.Planner; const D = P && P._debug; const t = D && D.ST.trips.find((v) => v.id === D.ST.tripId && !v.del && !v.sample); if (!t || !file) return;
+  const src = BK.src(await readBackup(file)); if (!src) { toast(tr('여행여권 백업 파일이 아니에요.')); return; }
+  if (!(await askConfirm(tr('이 여행을 파일 내용으로 바꿀까요?'), tr('파일에 적힌 묶음(일정 · 경비 · 일기 등)은 파일 내용으로 바뀌고, 그 묶음에서 파일에 없는 기록은 지워져요. 사진은 그대로 남아요. 되돌릴 수 없으니 먼저 백업 파일로 저장해 두세요.'), tr('바꾸기'), true))) return;
+  const before = JSON.stringify(t);
+  try { applyBackup(t, src, D.C); D.fixEnds(t); D.C.touch(t); await D.C.Store.put(t); }
+  catch (e) { tripsHost.nlog('patch failed: ' + (e && e.message)); try { const o = JSON.parse(before); for (const k of Object.keys(t)) delete t[k]; Object.assign(t, o); } catch (e2) { /* ignore */ } toast(tr('가져오지 못했어요.')); D.openTrip(t.id); return; }
+  D.openTrip(t.id); toast(tr('여행을 파일 내용으로 바꿨어요.'));
+  if (session && session.token) D.pushTrip(t).catch((e) => tripsHost.nlog('patch push failed: ' + (e && (e.code || e.message))));
 }
 async function bootTrips() {
   const P = root.Planner; const login = await takeLoginResult();   // 주소 정리(로그인 코드는 커뮤니티 페이지가 받는다)
@@ -468,6 +530,7 @@ async function bootTrips() {
   $$w('[data-tripseg] button').forEach((b) => b.addEventListener('click', () => { $$w('[data-tripseg] button').forEach((x) => x.classList.toggle('on', x === b)); P.listView(b.dataset.v === 'past' ? 'past' : 'now'); }));
   P.init(tripsHost);
   { const btn = $('#wv-import'), inp = $('#wv-import-file'); if (btn && inp) { btn.hidden = false; btn.addEventListener('click', () => { inp.value = ''; inp.click(); }); inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (f) importBackup(f); }); } }
+  { const inp = $('#wv-patch-file'); if (inp) inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (f) patchFromBackup(f); }); }
   if (root.PlannerGMap) { root.PlannerGMap.log = tripsHost.nlog; if (root.PlannerGMap.on()) root.PlannerGMap.ready(); }   // 구글 지도 스크립트를 미리 불러 둔다(앱의 Planner.show 와 같은 일)
   if (root.MutationObserver) { const mo = new MutationObserver(() => { addExportRow(); syncHistory(); }); mo.observe($('#pl-sheet'), { attributes: true, attributeFilter: ['hidden'] }); mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] }); }   // 시트 · 택시 카드 · 크게 본 사진이 열리고 닫힐 때
   setTimeout(() => { const sc = document.createElement('script'); sc.src = 'data/cities.js?v=' + encodeURIComponent(CFG.citiesV || ''); sc.async = true; document.head.appendChild(sc); }, 1200);   // 여행지 찾기에 쓰는 도시 이름(크다 — 화면이 뜬 뒤에 받는다. 받기 전에는 인기 여행지만 찾아진다)
