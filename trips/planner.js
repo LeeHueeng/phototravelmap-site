@@ -66,7 +66,7 @@ const DAY_COLORS = ['#3182F6', '#F5A623', '#03B26C', '#7A4FE0', '#F04452', '#0F7
 const dayColor = (i) => DAY_COLORS[((i % DAY_COLORS.length) + DAY_COLORS.length) % DAY_COLORS.length];
 const OVER_MIN = 11 * 60;   // 이동까지 합쳐 이 시간을 넘으면 '빡빡한 날'로 알린다
 
-const newSearch = () => ({ q: '', state: 'idle', items: [], local: [], more: null, added: {}, attr: '', seq: 0, count: 0 });
+const newSearch = () => ({ q: '', state: 'idle', items: [], local: [], more: null, added: {}, attr: '', seq: 0, count: 0, link: null });
 const ST = { ready: false, trips: [], fx: null, prefs: {}, stack: [], tripId: null, sec: 'plan', day: undefined, edit: false, draft: null, search: newSearch() };
 let map = null, pickMap = null, toastT = 0, EX = null, CALC = null, OPT = null, DIST = null, IMPORT = null, INVITE = null, LEG = null, WAY = null, STAY = null, pendingShared = null, pendingInvite = null, typeT = 0, pickT = 0;
 
@@ -142,6 +142,7 @@ function back() {
   if (!ST.stack.length) return false;
   const top = ST.stack[ST.stack.length - 1];
   if (top.name === 'new' && ST.draft && ST.draft.step > 1) { readWay(); ST.draft.step--; renderScreen(true); return true; }
+  if (top.name === 'photorec' && PR && PR.step !== 'pick') { PR.seq++; PR.step = 'pick'; renderScreen(true); return true; }   // 사진으로 여행 기록: 찾는 중 · 미리보기 → 날짜 고르기
   ST.stack.pop(); if (ST.stack.length) renderScreen(true); else closeScreens();
   return true;
 }
@@ -177,7 +178,7 @@ function renderList() {
   if (!ST.ready) { box.innerHTML = `<p class="pl-hint">${esc(tr('불러오는 중…'))}</p>`; return; }
   const td = C.today(); const all = ST.trips.filter(t => !t.del); const byStart = (a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
   if (!all.length) {
-    box.innerHTML = `<div class="pl-empty"><h2 class="title">${esc(tr('다음 여행을 계획해 볼까요?'))}</h2><p class="desc">${esc(tr('가고 싶은 곳을 담아 동선을 짜고, 여행 중에는 경비와 하루 한 줄을 남겨요.'))}</p><button type="button" class="btn primary" data-act="new">${esc(tr('새 여행 만들기'))}</button>${root.Account && !loggedIn() ? `<button type="button" class="pl-link" data-act="cloud-login">${esc(tr('로그인하고 저장해 둔 여행 불러오기'))}</button>` : ''}</div>`;
+    box.innerHTML = `<div class="pl-empty"><h2 class="title">${esc(tr('다음 여행을 계획해 볼까요?'))}</h2><p class="desc">${esc(tr('가고 싶은 곳을 담아 동선을 짜고, 여행 중에는 경비와 하루 한 줄을 남겨요.'))}</p><button type="button" class="btn primary" data-act="new">${esc(tr('새 여행 만들기'))}</button>${photoRecBtn('pl-link')}${root.Account && !loggedIn() ? `<button type="button" class="pl-link" data-act="cloud-login">${esc(tr('로그인하고 저장해 둔 여행 불러오기'))}</button>` : ''}</div>`;
     return;
   }
   const main = mainTrip(); const rest = main ? all.filter(t => t.id !== main.id) : all;   // 메인 여행은 날짜와 상관없이(아직 떠나지 않았어도) 맨 위에 따로
@@ -186,13 +187,14 @@ function renderList() {
   let h = cloudHtml();
   if (ST.listView === 'past') {   // 끝난 여행만
     h += past.length ? past.map(t => passHtml(t, 'past')).join('') : `<p class="pl-hint">${esc(tr('아직 끝난 여행이 없어요.'))}</p>`;
+    h += photoRecBtn('btn weak pl-list-new');   // 다녀온 여행을 사진으로 되살린다
     box.innerHTML = h; return;
   }
   if (main) { const now = C.tripStatus(main, td) === 'ongoing'; h += sec(tr('메인 여행')) + passHtml(main, now ? 'now' : 'up', now); }
   if (on.length) h += sec(tr('지금 여행 중')) + on.map(t => passHtml(t, 'now', true)).join('');
   if (up.length) h += sec(tr('예정된 여행')) + up.map(t => passHtml(t, 'up')).join('');
   if (!main && !on.length && !up.length) h += `<p class="pl-hint">${esc(past.length ? tr('예정된 여행이 없어요. 끝난 여행은 위의 ‘끝난 여행’에서 볼 수 있어요.') : tr('아직 일정이 없어요.'))}</p>`;
-  h += `<button type="button" class="btn weak pl-list-new" data-act="new">${esc(tr('새 여행 만들기'))}</button>`;
+  h += `<button type="button" class="btn weak pl-list-new" data-act="new">${esc(tr('새 여행 만들기'))}</button>${photoRecBtn('pl-link')}`;
   box.innerHTML = h;
 }
 function openTrip(id, sec) { const t0 = ST.trips.find(x => x.id === id); if (t0 && fixEnds(t0)) persist(t0); if (t0) findEnds(t0); if (t0 && !C.people(t0).some(p => p.id === t0.meId)) { C.ensureMe(t0, myName()); persist(t0); } ST.expFilter = 'all'; ST.tripId = id; ST.sec = sec || 'plan'; ST.day = undefined; ST.edit = false; ST.search = newSearch(); ST.stack.length = 0; show('trip'); }
@@ -206,6 +208,113 @@ ACT['list-del'] = async (d) => {
   if ((mainTrip() || {}).id === t.id) setMain(null);
   if (t.sample) ST.trips = ST.trips.filter(x => x !== t); else { t.del = true; persist(t); if (t.cloud) dropRemote(t).catch(() => { /* 다음에 맞출 때 다시 */ }); }
   renderList(); toast(guest ? tr('여행에서 나왔어요.') : tr('여행을 지웠어요.'));
+};
+// ---------- 사진으로 여행 기록 만들기(11-24 사용자: "날짜 지정하면 시간대 보고 어디 갔는지 알아서 분석 후 내 여행을 만들어 주는 거야") ----------
+// 그 기간에 찍은 사진의 시각 · 자리(메타데이터)만 쓴다 — 사진 자체는 읽지도 보내지도 않는다. 묶는 규칙은 PlannerCore.photoVisits.
+// 장소 이름: ① 내가 일정에 담아 둔 곳(150m 안)이면 그 이름 ② 기기의 지명 조회(H.placeNames — 지도에 쓰는 것과 같은 네이티브 조회의 자세한 판) ③ 도시 이름.
+// 앱에서만 된다(H.photoMeta 가 있을 때). 웹의 '내 여행'에는 사진이 없다.
+let PR = null;   // { step: 'pick' | 'busy' | 'preview' | 'none' | 'fail', from, to, msg, seq, title, days, dests, photos, pickTitle }
+const canPhotoRec = () => !!(H && H.photoMeta) && H.platform !== 'web';
+const photoRecBtn = (cls) => (canPhotoRec() ? `<button type="button" class="${cls}" data-act="photo-rec">${esc(tr('사진으로 여행 기록 만들기'))}</button>` : '');
+ACT['photo-rec'] = () => { PR = { step: 'pick', from: '', to: '', seq: 0 }; ST.stack.length = 0; show('photorec'); };
+/** 사진 자리의 표준시: 지도에 쓰는 도시 묶음(H.DATA.stops) 가운데 가장 가까운 곳(200km 안)의 것, 없으면 경도로 어림 */
+function prStops() { return ((H && H.DATA && H.DATA.stops) || []).filter(x => C.hasLL(x)); }
+function prNear(stops, p, maxKm) { let best = null, bd = maxKm; for (const x of stops) { const d = C.hav(p.lat, p.lon, x.lat, x.lon); if (d < bd) { bd = d; best = x; } } return best; }
+function prTz(stops) { const memo = new Map(); return (p) => { const k = Math.round(p.lat * 10) + ',' + Math.round(p.lon * 10); if (memo.has(k)) return memo.get(k); const x = prNear(stops.filter(v => Number.isFinite(v.tz)), p, 200); const tz = x ? x.tz : Math.round(p.lon / 15) * 3600; memo.set(k, tz); return tz; }; }
+// 지명 조회(애플 · 구글)는 큰 볼거리에만 이름(aoi)을 주고 나머지는 주소를 준다(11-24 에 애플의 실제 답으로 확인: 삿포로맥주박물관 · 오도리공원 · 신치토세공항은 aoi, 그 밖은 '오도리니시 2-5' 같은 번지).
+// → 볼거리 이름이 있으면 그것, 없으면 주소에서 번지 · 번호를 떼어 길 · 동네 이름으로: '오도리니시 2-5' → '오도리니시', '大通西2丁目5' → '大通西2丁目', '5, Odori Nishi 2-Chōme' → 'Odori Nishi 2-Chōme', '해운대해변로 264' → '해운대해변로', '03045'(우편번호) → 버림.
+// 순서: 볼거리(aoi) → 이름(name) → 길(road) → 동네(sub — 일본에서는 구(區)라 너무 넓어 맨 뒤). 근처 장소 검색(MapKit)은 쓰지 않는다 — 가까운 가게 · 미용실이 먼저 나와 엉뚱한 이름이 되고, 한국에서는 답이 없다.
+function prClean(v) {
+  v = String(v || '').trim(); if (!v || v === '-') return '';
+  v = v.replace(/^[\d\-–—#]+[,\s]+/, '').replace(/[\s,]*\d+(?:[\-–—]\d+)*(?:\s*(?:번지|호|号|番地|番))?$/, '').trim();
+  return v && v.length <= 40 && /[^\d\s\-–—#.,]/.test(v) ? v : '';
+}
+function placeLabel(r) { if (!r) return ''; const aoi = String(r.aoi || '').trim(); return (aoi && aoi.length <= 40 ? aoi : '') || prClean(r.name) || prClean(r.road) || prClean(r.sub) || ''; }
+const prShort = (n) => (root.PhotoTripBuilder && root.PhotoTripBuilder.shortKr ? root.PhotoTripBuilder.shortKr(n) : n);
+function prMsg() { const el = $('#pl-pr-msg'); if (el && PR) el.textContent = PR.msg || ''; }
+async function prRun() {
+  const pr = PR; if (!pr) return; const seq = ++pr.seq; const alive = () => PR === pr && pr.seq === seq;
+  pr.step = 'busy'; pr.msg = tr('사진을 읽는 중…'); renderScreen(true);
+  let photos = null; try { photos = await H.photoMeta(); } catch (e) { photos = null; log('photo rec: meta failed ' + (e && e.message)); }
+  if (!alive()) return; if (!Array.isArray(photos)) { pr.step = 'fail'; renderScreen(true); return; }
+  const a = C.parseYmd(pr.from), b = C.parseYmd(pr.to); const t0 = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) / 1000 - 2 * 86400, t1 = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) / 1000 + 3 * 86400;   // 표준시 차이 · 앞뒤 하루만큼 넉넉히 고른 뒤, 그곳 날짜로 다시 거른다
+  const stops = prStops(); const home = H.DATA && H.DATA.home; const win = photos.filter(p => p && p.t >= t0 && p.t <= t1); const tzOf = prTz(stops);
+  const opt = { skip: home && C.hasLL(home) ? (c) => C.hav(c.lat, c.lon, home.lat, home.lon) <= 0.5 : null };
+  if (pr.pickTitle) {   // 사진에서 찾은 여행을 눌렀을 때: 앞뒤 하루에 집에서 먼 곳(40km 밖)이 더 있으면 그 날도 넣는다 — 떠나는 날의 공항처럼 사진이 적어 지도의 여행에는 안 잡힌 날
+    const others = ((H.DATA && H.DATA.trips) || []).filter(x => x && !(String(x.start).slice(0, 10) === pr.from && String(x.end).slice(0, 10) === pr.to));
+    const far = (day) => day <= C.today() && !others.some(x => day >= String(x.start).slice(0, 10) && day <= String(x.end).slice(0, 10)) && C.photoVisits(win, tzOf, day, day, opt).some(d => d.places.some(q => !home || !C.hasLL(home) || C.hav(q.lat, q.lon, home.lat, home.lon) > 40));
+    const before = C.addDays(pr.from, -1), after = C.addDays(pr.to, 1); if (far(before)) pr.from = before; if (far(after)) pr.to = after;
+  }
+  const days = C.photoVisits(win, tzOf, pr.from, pr.to, opt);
+  let all = days.reduce((l, d) => l.concat(d.places), []);
+  log('photo rec: ' + pr.from + '~' + pr.to + ' photos ' + win.length + ' → days ' + days.length + ' places ' + all.length);
+  if (!all.length) { pr.step = 'none'; renderScreen(true); return; }
+  // 이름 ① 내 일정에 담아 둔 곳
+  const mine = []; for (const t of ST.trips) if (!t.del && !t.sample) for (const it of C.live(t.items)) if (C.hasLL(it) && it.name && it.kind !== 'note' && !it.wayId) mine.push(it);
+  const need = []; for (const p of all) { const it = prNear(mine, p, 0.15); if (it) { p.name = it.name; p.known = true; } else need.push(p); }
+  // 이름 ② 기기의 지명 조회(네 곳씩 — 얼마나 됐는지 보이게)
+  if (need.length && H.placeNames) for (let i = 0; i < need.length && alive(); i += 4) {
+    pr.msg = tr('장소 이름을 확인하는 중… {a} / {b}', { a: Math.min(i + 4, need.length), b: need.length }); prMsg();
+    let rs = []; try { rs = (await H.placeNames(need.slice(i, i + 4).map(p => [p.lat, p.lon, p.t0]))) || []; } catch (e) { rs = []; }
+    need.slice(i, i + 4).forEach((p, k) => { p.geo = rs[k] || null; });
+  }
+  if (!alive()) return;
+  for (const p of all) { const st = prNear(stops, p, 60); const g = p.geo || {};
+    p.city = prShort((st && !st.home && st.name) || g.city || g.county || (st && st.name) || ''); p.cc = (st && st.cc) || g.cc || '';   // 도시 이름은 지도에 쓰는 것(같은 말로 보이게) → 지명 조회의 것. '삿포로 시' → '삿포로'
+    if (!p.name) { const lb = placeLabel(p.geo); p.name = lb || p.city || tr('이름 없는 곳'); p.vague = !lb; }   // vague: 그 자리의 이름을 못 얻어 도시 이름으로 적은 곳
+    p.on = true; }
+  // 같은 이름이 잇따르면 하나로: 동네 이름까지 얻은 곳은 1.5km 안일 때, 도시 이름뿐인 곳은 거리와 상관없이(지명 조회가 안 될 때 '다낭 · 다낭 · 다낭'이 되지 않게 — 그 날 그 도시에 머문 한 줄로)
+  for (const d of days) { const out = []; for (const p of d.places) { const q = out[out.length - 1];
+      if (q && q.name === p.name && !(p.known && q.known) && ((p.vague && q.vague) || C.hav(p.lat, p.lon, q.lat, q.lon) <= 1.5)) { const n = q.n + p.n; q.lat = +((q.lat * q.n + p.lat * p.n) / n).toFixed(6); q.lon = +((q.lon * q.n + p.lon * p.n) / n).toFixed(6); q.t1 = p.t1; q.n = n; q.stay = Math.max(10, Math.min(600, Math.round((q.t1 - q.t0) / 300) * 5)); q.ids = q.ids.concat(p.ids).slice(0, 24); }
+      else out.push(p); } d.places = out; }
+  all = days.reduce((l, d) => l.concat(d.places), []);
+  // 여행지: 사진이 많은 도시 셋까지
+  const cnt = new Map(); for (const p of all) { if (!p.city) continue; const o = cnt.get(p.city) || { name: p.city, cc: p.cc, n: 0, lat: 0, lon: 0 }; o.n += p.n; o.lat += p.lat * p.n; o.lon += p.lon * p.n; if (!o.cc) o.cc = p.cc; cnt.set(p.city, o); }
+  pr.dests = Array.from(cnt.values()).sort((x, y) => y.n - x.n).slice(0, 3).map(o => ({ name: o.name, cc: o.cc || '', lat: +(o.lat / o.n).toFixed(4), lon: +(o.lon / o.n).toFixed(4) }));
+  pr.title = pr.pickTitle || (pr.dests.length ? tripTitle(pr.dests) : tr('사진으로 만든 여행'));
+  pr.days = days; pr.photos = days.reduce((n, d) => n + d.photos, 0); pr.step = 'preview'; renderScreen(true);
+}
+SCREENS.photorec = () => {
+  const pr = PR || (PR = { step: 'pick', from: '', to: '', seq: 0 }); const title = tr('사진으로 여행 기록 만들기'); let html = '', cta = '', after = null;
+  if (pr.step === 'pick') {
+    const td = C.today(); const found = ((H && H.DATA && H.DATA.trips) || []).filter(x => x && x.start && x.end).slice().sort((x, y) => String(y.start).localeCompare(String(x.start))).slice(0, 40);
+    html = `<h1 class="pl-step-title">${esc(tr('언제 다녀온 여행인가요?'))}</h1><p class="pl-step-desc">${esc(tr('날짜를 고르면 그 기간에 찍은 사진의 시각과 위치로 어디에 다녀왔는지 정리해 내 여행으로 만들어요. 사진은 기기 밖으로 나가지 않아요.'))}</p>
+      <div class="pl-date-row"><div class="field"><label for="pl-pr-from">${esc(tr('가는 날'))}</label><input id="pl-pr-from" type="date" max="${td}" value="${esc(pr.from)}"></div><div class="field"><label for="pl-pr-to">${esc(tr('오는 날'))}</label><input id="pl-pr-to" type="date" max="${td}" value="${esc(pr.to)}"></div></div>
+      ${found.length ? `<div class="pl-flabel">${esc(tr('사진에서 찾은 여행 — 누르면 그 날짜로 찾아요'))}</div><ul class="pl-pr-found">${found.map(x => { const d0 = String(x.start).slice(0, 10), d1 = String(x.end).slice(0, 10); return `<li role="button" tabindex="0" data-act="pr-pick" data-a="${d0}" data-b="${d1}" data-t="${esc(x.title || '')}"><div class="pl-pr-found-b"><b>${esc(x.title || '')}</b><span>${esc(rangeText({ start: d0, end: d1 }))}${x.n ? ' · ' + esc(tr('사진 {n}장', { n: x.n })) : ''}</span></div><span class="chev"></span></li>`; }).join('')}</ul>` : ''}`;
+    cta = `<button type="button" class="btn primary" data-act="pr-run">${esc(tr('사진에서 찾기'))}</button>`;
+    after = () => { const f = $('#pl-pr-from'), t = $('#pl-pr-to'); if (f) f.addEventListener('change', () => { pr.from = f.value; pr.pickTitle = ''; }); if (t) t.addEventListener('change', () => { pr.to = t.value; pr.pickTitle = ''; }); };   // 날짜를 고른다고 화면을 다시 그리지 않는다(iOS 의 날짜 창이 닫힌다)
+  } else if (pr.step === 'busy') {
+    html = `<div class="pl-pr-busy"><div class="pl-pr-spin" aria-hidden="true"></div><p id="pl-pr-msg" role="status">${esc(pr.msg || '')}</p><p class="pl-pr-range">${esc(rangeText({ start: pr.from, end: pr.to }))}</p></div>`;
+  } else if (pr.step === 'none' || pr.step === 'fail') {
+    html = `<div class="pl-pr-busy"><h1 class="pl-step-title">${esc(pr.step === 'none' ? tr('이 기간에는 위치가 있는 사진이 없어요') : tr('사진 정보를 읽지 못했어요'))}</h1><p class="pl-step-desc">${esc(pr.step === 'none' ? tr('{r}에 찍은 사진 가운데 위치 정보가 있는 것을 찾지 못했어요. 날짜를 다시 골라 보세요.', { r: rangeText({ start: pr.from, end: pr.to }) }) : tr('사진 접근을 허용했는지 확인하고 다시 해 주세요.'))}</p></div>`;
+    cta = `<button type="button" class="btn secondary" data-act="pr-again">${esc(tr('날짜 다시 고르기'))}</button>`;
+  } else {
+    const days = C.tripDays({ start: pr.from, end: pr.to }); const on = pr.days.reduce((n, d) => n + d.places.filter(p => p.on).length, 0);
+    html = `<h1 class="pl-step-title">${esc(tr('이렇게 다녀오셨네요'))}</h1><p class="pl-step-desc">${esc(tr('사진 {n}장에서 {m}곳을 찾았어요. 빼고 싶은 곳은 눌러서 끄세요. 이름과 시각은 만든 뒤에 고칠 수 있어요.', { n: pr.photos, m: pr.days.reduce((n, d) => n + d.places.length, 0) }))}</p>
+      <div class="field"><label for="pl-pr-title">${esc(tr('여행 이름'))}</label><input id="pl-pr-title" maxlength="40" autocomplete="off" value="${esc(pr.title || '')}"></div>
+      ${pr.days.map((d, di) => { const idx = days.indexOf(d.day); let no = 0; return `<div class="pl-dayhead"><b>${esc(tr('{n}일차', { n: idx + 1 }))} · ${esc(longDay(d.day))}</b><span>${esc(tr('사진 {n}장', { n: d.photos }))}</span></div><ol class="pl-tl timed pl-pr-list">${d.places.map((p, pi) => { if (p.on) no++;
+        return `<li class="pl-item ${p.on ? '' : 'off'}" data-act="pr-toggle" data-d="${di}" data-i="${pi}" role="checkbox" aria-checked="${p.on ? 'true' : 'false'}" tabindex="0"><span class="pl-time">${esc(p.time)}</span><span class="pl-num" style="background:${p.on ? dayColor(idx) : 'var(--grey300)'}">${p.on ? no : ''}</span><div class="pl-item-body"><div class="pl-item-title">${esc(p.name)}</div><div class="pl-item-sub">${esc(tr('{t} 머묾', { t: durText(p.stay) }))} · ${esc(tr('사진 {n}장', { n: p.n }))}</div></div><span class="pl-pr-check" aria-hidden="true">${p.on ? '✓' : ''}</span></li>`; }).join('')}</ol>`; }).join('')}`;
+    cta = `<button type="button" class="btn primary" data-act="pr-make" ${on ? '' : 'disabled'}>${esc(tr('내 여행으로 만들기 · {n}곳', { n: on }))}</button>`;
+    after = () => { const ti = $('#pl-pr-title'); if (ti) ti.addEventListener('input', () => { pr.title = ti.value; }); };
+  }
+  return { title, html, cta, after };
+};
+ACT['pr-pick'] = (d) => { if (!PR) return; PR.from = d.a; PR.to = d.b; PR.pickTitle = d.t || ''; prRun(); };   // 사진에서 찾은 여행을 누르면 그 날짜로 바로 찾는다
+ACT['pr-run'] = () => {
+  const pr = PR; if (!pr) return; const f = $('#pl-pr-from'), t = $('#pl-pr-to'); if (f) pr.from = f.value; if (t) pr.to = t.value || pr.from;
+  if (!dOf(pr.from) || !dOf(pr.to)) { toast(tr('가는 날과 오는 날을 골라 주세요.')); return; }
+  if (pr.to < pr.from) { const x = pr.from; pr.from = pr.to; pr.to = x; }
+  if (C.dayDiff(pr.from, pr.to) > 60) { toast(tr('한 번에 60일까지 찾을 수 있어요.')); return; }
+  prRun();
+};
+ACT['pr-again'] = () => { if (!PR) return; PR.seq++; PR.step = 'pick'; renderScreen(true); };
+ACT['pr-toggle'] = (d) => { const p = PR && PR.days && PR.days[+d.d] && PR.days[+d.d].places[+d.i]; if (!p) return; p.on = !p.on; renderScreen(); };
+ACT['pr-make'] = () => {
+  const pr = PR; if (!pr || pr.step !== 'preview') return; const home = homeCur(); const n = pr.days.reduce((k, d) => k + d.places.filter(p => p.on).length, 0); if (!n) return;
+  const t = C.newTrip({ title: (pr.title || '').trim() || tr('사진으로 만든 여행'), start: pr.from, end: pr.to, dests: pr.dests || [], home, cur: PD.CC_CUR[((pr.dests || []).find(v => v.cc) || {}).cc] || home, from: { photos: 1 } });
+  for (const d of pr.days) { const list = d.places.filter(p => p.on); const keys = C.seqKeys(list.length);
+    list.forEach((p, i) => t.items.push({ id: C.uid(), day: d.day, sort: keys[i], kind: 'place', name: String(p.name).slice(0, 60), lat: p.lat, lon: p.lon, time: p.time, stay: p.stay, done: true, auto: true, src: 'photo', pn: p.n, c: C.now(), u: C.now() })); }   // 다녀온 곳이므로 방문 완료로
+  ST.trips.push(t); C.ensureMe(t, myName()); persist(t); PR = null; openTrip(t.id); toast(tr('사진으로 여행 기록을 만들었어요.'));
 };
 // ---------- 메인 여행(여행 모드) ----------
 // 메인 여행을 정하면 앱을 열자마자 그 여행이 뜬다(아래 탭이 일정·경비·일기·준비). 목록에서는 날짜와 상관없이 맨 위. 여행이 끝나면(오는 날이 지나면) 저절로 풀려 원래 화면으로 돌아간다
@@ -840,6 +949,7 @@ function itemSheet(id) {
   const pr = legPair(id); let lg = null; if (pr) { const dp = C.dayPlan(t, it.day); lg = dp.legs[dp.items.findIndex(x => x.id === id)] || null; }   // 다음 일정까지 이동(같은 날의 다음 줄이 있을 때)
   sheet(`<div class="pl-place">${hasImg(it) ? `<img class="pl-thumb lg" ${picAttrs(it.img)} alt="">` : ''}<div class="pl-place-body"><div class="sheet-title">${esc(it.name)}</div>${it.addr ? `<p class="desc">${esc(it.addr)}</p>` : ''}</div></div>
     ${C.hasLL(it) ? `<div class="pl-place-acts">${(ST.apps = mapApps(it, null)).map((x, i) => `<button type="button" class="chip" data-act="map-app" data-i="${i}">${esc(tr(x[0]))}</button>`).join('')}</div>` : ''}
+    ${it.stayId || it.wayId ? '' : `<button type="button" class="pl-locrow ${C.hasLL(it) ? 'set' : ''}" data-act="item-locate" data-id="${esc(id)}"><i class="pl-loc-ic">${PIN_SVG}</i><span class="pl-locrow-t">${esc(C.hasLL(it) ? tr('위치 바꾸기') : tr('위치 정하기'))}</span><span class="pl-locrow-s">${esc(C.hasLL(it) ? '' : tr('지도에 보이게 하려면 위치를 정해 주세요.'))}</span><span class="chev"></span></button>`}
     <div class="field"><label for="pl-i-name">${esc(tr('이름'))}</label><input id="pl-i-name" maxlength="60" value="${esc(it.name)}"></div>
     <div class="pl-flabel">${esc(tr('날짜'))}</div><div class="chips small" id="pl-i-day">${days.map((d, i) => `<button type="button" class="chip ${it.day === d ? 'active' : ''}" data-v="${d}">${esc(tr('{n}일차', { n: i + 1 }))}</button>`).join('')}<button type="button" class="chip ${!it.day ? 'active' : ''}" data-v="">${esc(tr('가고 싶은 곳'))}</button></div>
     <div class="pl-flabel">${esc(tr('도착 시각(정해졌을 때만)'))}</div><div class="field"><input id="pl-i-time" type="time" value="${esc(it.time || '')}"></div>
@@ -869,6 +979,20 @@ ACT['item-leg'] = (d) => {   // 시트의 '다음 일정까지 이동': 적던 �
   if (r === 'changed') { persist(t); renderScreen(); }
   if (legPair(d.id)) ACT.leg(d); else closeSheet();   // 날짜를 옮겨 다음 일정이 없어졌으면 닫는다
 };
+// 시트의 '위치 정하기 · 바꾸기': 이름만 적어 둔 줄(손으로 적은 것 · 파일로 가져온 것)을 지도에 잇는다. 적던 것은 저장하고, 장소 찾기 화면을 그 이름으로 연다(고르면 새로 담지 않고 이 줄의 위치가 된다)
+ACT['item-locate'] = (d) => {
+  const t = trip(); const it = t && t.items.find(x => x.id === d.id); if (!it) return; const r = readItemForm(t, it, true); if (!r) return;
+  if (r === 'changed') persist(t);
+  closeSheet(); ST.search = Object.assign(newSearch(), { q: it.name }); show('add', { day: it.day || null, locate: it.id });
+  const q = it.name.trim(); if (q.length >= 2 && !jamoTail(q) && !C.mapLinkOf(q)) { ST.search.local = cityRows(q); ST.search.state = 'loading'; paintResults(); suggest(q); }
+};
+/** 찾은 곳 x 를 일정 한 줄의 위치로(이름 · 시각 · 메모는 그대로). 메모 줄이면 장소가 된다 */
+function setItemPlace(t, it, x) {
+  it.lat = +(+x.lat).toFixed(6); it.lon = +(+x.lon).toFixed(6); if (x.addr) it.addr = String(x.addr).slice(0, 160); if (x.src) it.src = x.src; if (hasImg(x)) it.img = x.img;
+  if (x.link) it.link = x.link; else delete it.link; if (it.kind === 'note') it.kind = 'place';
+  C.touch(it); persist(t);
+}
+const topLocate = () => { const top = ST.stack[ST.stack.length - 1]; const id = top && top.p ? top.p.locate : null; const t = trip(); return id && t ? t.items.find(x => x.id === id && !x.del) || null : null; };
 ACT['item-done'] = (d) => { const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it) return; it.done = !it.done; it.auto = false; C.touch(it); persist(t); closeSheet(); renderScreen(); };
 ACT['item-del'] = (d) => { const t = trip(); const it = t.items.find(x => x.id === d.id); if (!it) return; it.del = true; C.touch(it);
   if (it.wayId) { const b = t.bookings.find(x => x.id === it.wayId); if (b) { b.noEnd = Object.assign({}, b.noEnd, { [it.wayEnd === 'from' ? 'from' : 'to']: 1 }); C.touch(b); } }   // 직접 뺀 시작·끝은 다시 넣지 않는다
@@ -928,7 +1052,7 @@ const encName = (v) => encodeURIComponent(String(v || '').replace(/[,/]/g, ' '))
 function mapApps(a, b, mode) {
   const cc = tripCC(); const enc = encName; const ios = H && H.platform === 'ios';
   const gm = { walk: 'walking', taxi: 'driving', car: 'driving' }[mode] || 'transit', am = { walk: 'w', taxi: 'd', car: 'd' }[mode] || 'r';   // 고른 이동 수단에 맞춘 길찾기
-  const G = ['구글 지도', b ? `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lon}&destination=${b.lat},${b.lon}&travelmode=${gm}` : `https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lon}`];
+  const G = ['구글 지도', b ? `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lon}&destination=${b.lat},${b.lon}&travelmode=${gm}` : a.link && (C.parseMapUrl(a.link) || {}).src === 'gmap' ? a.link : `https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lon}`];
   const A = ['애플 지도', b ? `https://maps.apple.com/?saddr=${a.lat},${a.lon}&daddr=${b.lat},${b.lon}&dirflg=${am}` : `https://maps.apple.com/?ll=${a.lat},${a.lon}&q=${enc(a.name)}`];
   const K = ['카카오맵', b ? `https://map.kakao.com/link/from/${enc(a.name)},${a.lat},${a.lon}/to/${enc(b.name)},${b.lat},${b.lon}` : `https://map.kakao.com/link/map/${enc(a.name)},${a.lat},${a.lon}`];
   const N = ['네이버 지도', `https://map.naver.com/p/search/${enc(b ? b.name : a.name)}`];
@@ -993,6 +1117,8 @@ ACT['map-app'] = (d) => { const x = ST.apps && ST.apps[+d.i]; closeSheet(); if (
 // ---------- 장소 추가 ----------
 // 입력하는 동안 바로 찾는다: 기기 안의 도시 목록(즉시) + 서버 /places/suggest(국내 카카오, 해외 위키백과 — 사진이 같이 온다).
 // 가게·주소처럼 거기 없는 곳은 '더 찾아보기'(/places/search, 오픈스트리트맵)로 넓힌다. 그래도 없으면 이름만 적거나 지도에서 찍는다.
+// 검색에 안 나오는 곳은 구글 지도 · 애플 지도에서 '공유'한 링크를 붙여 넣으면 그 이름과 자리로 담긴다(readLink). 그 앱의 공유 창에서 여행여권을 골라도 된다(takeMapLink).
+// p.locate = 일정 한 줄의 번호: 새로 담지 않고 그 줄의 위치를 정한다(일정 시트의 '위치 정하기 · 바꾸기')
 ACT.add = () => { ST.search = newSearch(); show('add', { day: ST.day === 'all' ? null : ST.day }); loadReco(trip()); };
 // 국내 여행은 입력하기 전에 그 여행지의 가볼 만한 곳(서버 /places/spots, 한국관광공사)을 사진과 함께 보여 준다
 const RECO = new Map();
@@ -1050,31 +1176,83 @@ function makeMap(cv, setup, slot) {
   const first = build(canG && G.loaded()); slot.set(first);
   if (canG && !G.loaded()) G.ready().then((ok) => { if (ok && slot.get() === first && cv.isConnected) { first.destroy(); slot.set(build(true)); } });
 }
+// 지도 링크 → { name, addr, lat, lon, src, link, approx } (좌표를 못 읽으면 lat 없이 nocoords). hint = 공유할 때 같이 온 글(장소 이름)
+// ① 링크의 주소 글자에 핀 자리가 있으면 그대로 ② 없으면 폰이 그 링크를 보이지 않게 직접 열어(숙소 링크 읽기와 같은 LinkProbe) 주소가 장소 주소(…!3d…!4d…)로 바뀌면 읽는다
+// ③ 그 길이 없거나(웹 버전) 안 되면 서버(/links/place: 짧은 주소를 따라가 주소 글자를 읽고, 좌표가 없으면 적힌 주소로 어림)
+// 주소가 장소 주소로 바뀌고(…!3d…!4d…) 제목에 장소 이름이 들어올 때까지 기다린다(제목은 몇 초 늦게 온다 — 공유할 때 이름이 같이 왔으면(need = 0) 기다리지 않는다). 마지막 차례(final)면 그때까지 읽힌 것으로
+const mapProbeJs = (needTitle) => `function(final){try{var h=String(location.href||'');var t=String(document.title||'');var ok=/!3d-?\\d/.test(h);var named=${needTitle ? '!!t&&!/^(Google|구글)/i.test(t)' : 'true'};if((!ok||!named)&&!final)return null;return JSON.stringify({ok:ok,href:h.slice(0,1500),title:t.slice(0,200)});}catch(e){return final?JSON.stringify({ok:false}):null;}}`;
+async function resolveMapLink(url, hint) {
+  const first = C.parseMapUrl(url, hint); if (!first) return null;
+  const link = url.length <= 300 ? url : ''; const named = C.mapTitleName(hint);
+  const pack = (p, approx) => ({ name: named || p.name || '', addr: p.addr || '', lat: p.lat, lon: p.lon, src: p.src, link, approx: approx || '' });
+  if (first.lat != null && first.exact) return pack(first);
+  if (H.probeLink && H.platform !== 'web' && first.src === 'gmap') {
+    let r = null; try { r = await H.probeLink(url, mapProbeJs(!named && !first.name)); } catch (e) { r = null; }
+    const q = r && r.href ? C.parseMapUrl(r.href, r.title) : null;
+    log('map link probe: ' + (q ? (q.lat != null ? 'ok' + (q.exact ? '' : ' (view)') : 'no coords') : 'unavailable'));
+    if (q && q.lat != null) { if (!q.name) q.name = first.name; if (!q.addr) q.addr = first.addr; return pack(q, q.exact ? '' : 'view'); }
+    if (q) { if (!first.name) first.name = q.name; if (!first.addr) first.addr = q.addr; }
+  }
+  try {
+    const j = await H.api('GET', '/links/place?' + new URLSearchParams({ url, lang: LANG() }).toString());
+    if (j && j.ok && Number.isFinite(+j.lat) && Number.isFinite(+j.lon)) return { name: named || j.name || first.name || '', addr: j.addr || first.addr || '', lat: +j.lat, lon: +j.lon, src: j.src === 'amap' ? 'amap' : 'gmap', link, approx: j.approx || '' };   // 이름 · 주소 · 좌표를 같은 주소에서 읽은 것으로
+    if (j) { if (!first.name) first.name = String(j.name || ''); if (!first.addr) first.addr = String(j.addr || ''); }
+  } catch (e) { log('map link failed: ' + (e && (e.code || e.message))); }
+  if (first.lat != null) return pack(first, 'view');
+  return { name: named || first.name || '', addr: first.addr || '', src: first.src, link, nocoords: true };
+}
+const linkName = (x) => (x && x.name) || tr('지도에서 고른 곳');
+async function readLink(url, hint) {
+  const s = ST.search; if (s.link && s.link.url === url) { paintResults(); return; }
+  const L = s.link = { url, state: 'loading', item: null }; delete s.added.k0; paintResults();
+  const r = await resolveMapLink(url, hint || ''); if (ST.search !== s || s.link !== L) return;
+  if (r) { r.nameless = !r.name; r.name = linkName(r); } L.item = r; L.state = r && C.hasLL(r) ? 'done' : 'none'; paintResults();
+}
+function linkHtml() {
+  const L = ST.search.link; const loc = !!topLocate(); let h = '';
+  if (L.state === 'loading') return `<p class="pl-hint">${esc(tr('지도 링크를 읽는 중…'))}</p>`;
+  if (L.state === 'done') {
+    h += `<ul class="rows pl-res">${resRow(L.item, 'k', 0)}</ul><p class="caption">${esc(tr('지도 링크에서 읽은 곳이에요.') + (L.item.approx ? ' ' + tr('위치가 정확하지 않을 수 있어요. 담은 뒤 지도에서 확인해 주세요.') : ''))}</p>`;
+  } else {
+    h += `<p class="pl-hint">${esc(tr('이 링크에서 위치를 읽지 못했어요.'))}</p>`;
+    if (L.item && L.item.name && !L.item.nameless && !loc) h += `<ul class="rows pl-ways"><li class="row tap" data-act="add-linkname"><span class="pl-thumb ic">${PEN_SVG}</span><div class="row-body"><div class="row-title">${esc(tr('‘{q}’ 이름만 적어 두기', { q: L.item.name }))}</div><div class="row-desc">${esc(tr('위치는 정하지 않고 할 일처럼 적어 둬요.'))}</div></div></li></ul>`;
+  }
+  return h;
+}
+ACT['add-linkname'] = () => {
+  const s = ST.search; const x = s.link && s.link.item; if (!x || !x.name) return;
+  addItem(trip(), topDay(), Object.assign({ name: String(x.name).slice(0, 60) }, x.addr ? { addr: x.addr } : {}, x.link ? { link: x.link } : {})); const n = s.count + 1;
+  ST.search = Object.assign(newSearch(), { count: n, seq: s.seq + 1 }); clearTimeout(typeT);
+  const inp = $('#pl-q'); if (inp) inp.value = ''; const b = $('.pl-search-x'); if (b) b.hidden = true;
+  paintResults(); toast(tr('‘{n}’ 담았어요.', { n: x.name }));
+};
 function resRow(x, k, i) {
   const s = ST.search; const on = !!s.added[k + i]; const c = tripCenter(trip()); const km = c && C.hasLL(x) ? C.hav(c[0], c[1], +x.lat, +x.lon) : null;
   const sub = [x.addr, km != null && km >= 0.1 && x.src !== 'city' ? kmText(km) : ''].filter(Boolean).join(' · ');
   return `<li class="row tap pl-rrow ${on ? 'on' : ''}" data-act="add-result" data-k="${k}" data-i="${i}">${thumb(x)}<div class="row-body"><div class="row-title">${esc(x.name)}</div>${sub ? `<div class="row-desc">${esc(sub)}</div>` : ''}</div><span class="pl-plus" aria-label="${esc(on ? tr('담음') : tr('담기'))}">${on ? CHECK_SVG : PLUS_SVG}</span></li>`;
 }
 function waysHtml(q) {
-  const m = ST.search.more; let h = '<ul class="rows pl-ways">';
-  if (q) {
+  const m = ST.search.more; let h = '<ul class="rows pl-ways">'; const loc = !!topLocate();
+  if (q && !ST.search.link) {
     if (!m) h += `<li class="row tap" data-act="search-more"><span class="pl-thumb ic">${SEARCH_SVG}</span><div class="row-body"><div class="row-title">${esc(tr('‘{q}’ 더 찾아보기', { q }))}</div><div class="row-desc">${esc(tr('가게나 주소까지 넓혀서 찾아요.'))}</div></div></li>`;
     else if (m.state === 'loading') h += `<li class="row"><span class="pl-thumb ic">${SEARCH_SVG}</span><div class="row-body"><div class="row-desc">${esc(tr('찾는 중…'))}</div></div></li>`;
     else if (m.state === 'error') h += `<li class="row"><span class="pl-thumb ic">${SEARCH_SVG}</span><div class="row-body"><div class="row-desc">${esc(tr('검색 서버에 연결하지 못했어요. 지도에서 직접 찍거나 이름만 적어 둘 수 있어요.'))}</div></div></li>`;
     else if (!m.items.length) h += `<li class="row"><span class="pl-thumb ic">${SEARCH_SVG}</span><div class="row-body"><div class="row-desc">${esc(tr('더 찾은 곳이 없어요.'))}</div></div></li>`;
-    h += `<li class="row tap" data-act="add-name"><span class="pl-thumb ic">${PEN_SVG}</span><div class="row-body"><div class="row-title">${esc(tr('‘{q}’ 이름만 적어 두기', { q }))}</div><div class="row-desc">${esc(tr('위치는 정하지 않고 할 일처럼 적어 둬요.'))}</div></div></li>`;
+    if (!loc) h += `<li class="row tap" data-act="add-name"><span class="pl-thumb ic">${PEN_SVG}</span><div class="row-body"><div class="row-title">${esc(tr('‘{q}’ 이름만 적어 두기', { q }))}</div><div class="row-desc">${esc(tr('위치는 정하지 않고 할 일처럼 적어 둬요.'))}</div></div></li>`;
   }
   return h + `<li class="row tap" data-act="pick"><span class="pl-thumb ic">${PIN_SVG}</span><div class="row-body"><div class="row-title">${esc(tr('지도에서 직접 찍기'))}</div><div class="row-desc">${esc(tr('검색에 없는 곳도 지도에서 자리를 골라 담을 수 있어요.'))}</div></div><span class="chev"></span></li></ul>`;
 }
 function resultsHtml() {
-  const s = ST.search; const t = trip(); const q = s.q.trim(); const day = topDay(); let h = '';
+  const s = ST.search; const t = trip(); const q = s.q.trim(); const day = topDay(); let h = ''; const loc = topLocate();
+  if (s.link) return linkHtml() + waysHtml(q);
   if (!q) {   // 입력 전: 가고 싶은 곳에 모아 둔 것을 이 날로 가져올 수 있다
+    if (loc) return `<p class="pl-hint">${esc(tr('이름을 입력하면 바로 찾아 드려요.'))}</p>` + linkTip() + waysHtml('');
     const wish = day ? C.dayItems(t, null).filter(i => i.kind !== 'note') : [];
     if (wish.length) h += `<div class="pl-sub-title">${esc(tr('가고 싶은 곳에서 가져오기'))}</div><ul class="rows pl-res">${wish.slice(0, 12).map(it => `<li class="row tap pl-rrow" data-act="wish-move" data-id="${esc(it.id)}">${thumb(it)}<div class="row-body"><div class="row-title">${esc(it.name)}</div>${it.addr ? `<div class="row-desc">${esc(it.addr)}</div>` : ''}</div><span class="pl-plus">${PLUS_SVG}</span></li>`).join('')}</ul>`;
     const reco = recoOf(t);
     if (reco.length) h += `<div class="pl-sub-title">${esc(tr('{d} 가볼 만한 곳', { d: recoDest(t).name }))}</div><ul class="rows pl-res">${reco.map((x, i) => resRow(x, 'r', i)).join('')}</ul><p class="caption">${esc(tr('한국관광공사'))}</p>`;
     if (!wish.length && !reco.length) h += `<p class="pl-hint">${esc(tr('이름을 입력하면 바로 찾아 드려요.'))}</p>`;
-    return h + waysHtml('');
+    return h + linkTip() + waysHtml('');
   }
   const more = s.more && s.more.items.length ? s.more.items : [];
   const list = s.items.map((x, i) => resRow(x, 's', i)).join('') + more.map((x, i) => resRow(x, 'm', i)).join('') + s.local.map((x, i) => resRow(x, 'l', i)).join('');
@@ -1083,16 +1261,19 @@ function resultsHtml() {
   else if (s.state === 'done' && !(s.more && s.more.state === 'done')) h += `<p class="pl-hint">${esc(tr('바로 나오는 곳이 없어요. 아래에서 더 찾아보세요.'))}</p>`;
   const attr = [s.items.length ? s.attr : '', more.length ? s.more.attr : ''].filter(Boolean).join(' · ');
   if (attr) h += `<p class="caption">${esc(attr)}</p>`;
+  if (s.more && s.more.state === 'done' && !more.length) h += linkTip();   // 더 찾아도 없을 때: 지도 앱에서 찾아 링크로 담는 길을 알려 준다
   return h + waysHtml(q);
 }
-const addCta = () => (ST.search.count > 0 ? `<button type="button" class="btn primary" data-act="back">${esc(tr('{n}곳 담았어요 · 일정 보기', { n: ST.search.count }))}</button>` : '');
+const linkTip = () => `<p class="caption pl-linktip">${esc(tr('검색에 없는 곳은 구글 지도에서 ‘공유’ → 여행여권을 고르거나, 그 링크를 여기에 붙여 넣으면 담을 수 있어요.'))}</p>`;
+const addCta = () => (ST.search.count > 0 && !topLocate() ? `<button type="button" class="btn primary" data-act="back">${esc(tr('{n}곳 담았어요 · 일정 보기', { n: ST.search.count }))}</button>` : '');
 function paintResults() { const box = $('#pl-results'); if (box) box.innerHTML = resultsHtml(); const cta = $('#pl-screen .pl-cta'); if (cta) cta.innerHTML = addCta(); }
 SCREENS.add = (p) => {
-  const t = trip(); const where = p.day ? tr('{n}일차', { n: dayNo(t, p.day) }) : tr('가고 싶은 곳'); const s = ST.search;
-  const html = `<div class="pl-search"><span class="pl-search-ic">${SEARCH_SVG}</span><input id="pl-q" type="search" enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="${esc(tr('어디에 가고 싶으세요?'))}" value="${esc(s.q)}"><button type="button" class="pl-search-x" data-act="q-clear" aria-label="${esc(tr('입력 지우기'))}" ${s.q ? '' : 'hidden'}>${CLOSE_SVG}</button></div>
-    <p class="pl-sum pl-add-where">${esc(tr('{d}에 담아요.', { d: where }))}</p><div id="pl-results">${resultsHtml()}</div>`;
-  return { title: tr('장소 추가'), html, cta: addCta(), after: () => {
+  const t = trip(); const where = p.day ? tr('{n}일차', { n: dayNo(t, p.day) }) : tr('가고 싶은 곳'); const s = ST.search; const loc = p.locate ? t.items.find(x => x.id === p.locate && !x.del) : null;
+  const html = `<div class="pl-search"><span class="pl-search-ic">${SEARCH_SVG}</span><input id="pl-q" type="search" enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="${esc(loc ? tr('장소 이름이나 지도 링크') : tr('어디에 가고 싶으세요?'))}" value="${esc(s.q)}"><button type="button" class="pl-search-x" data-act="q-clear" aria-label="${esc(tr('입력 지우기'))}" ${s.q ? '' : 'hidden'}>${CLOSE_SVG}</button></div>
+    <p class="pl-sum pl-add-where">${esc(loc ? tr('‘{n}’의 위치를 골라 주세요.', { n: loc.name }) : tr('{d}에 담아요.', { d: where }))}</p><div id="pl-results">${resultsHtml()}</div>`;
+  return { title: loc ? tr('위치 정하기') : tr('장소 추가'), html, cta: addCta(), after: () => {
     const inp = $('#pl-q'); inp.addEventListener('input', onType);
+    inp.addEventListener('paste', () => setTimeout(() => { if (C.mapLinkOf(inp.value)) onType(); }, 60));   // 지도 링크를 붙여 넣으면 바로 읽는다
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); ACT['search-more'](); } });
     if (!s.q) { try { inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
   } };
@@ -1101,6 +1282,9 @@ function onType() {
   const inp = $('#pl-q'); const s = ST.search; if (!inp) return;
   s.q = inp.value; s.more = null; const x = $('.pl-search-x'); if (x) x.hidden = !s.q;
   const q = s.q.trim(); clearTimeout(typeT); s.seq++;
+  const lk = C.mapLinkOf(q);
+  if (lk) { s.items = []; s.local = []; s.attr = ''; s.state = 'done'; for (const k of Object.keys(s.added)) if (k[0] !== 'k') delete s.added[k]; readLink(lk, q.replace(lk, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)); return; }   // 링크와 같이 붙여 넣은 글(지도 앱이 '이름 + 링크'로 준다)은 이름으로
+  if (s.link) { s.link = null; delete s.added.k0; }
   if (q.length < 2) { s.items = []; s.local = []; s.added = {}; s.attr = ''; s.state = 'idle'; paintResults(); return; }
   const local = cityRows(q); if (local.map(llKey).join() !== s.local.map(llKey).join()) { s.local = local; for (const k of Object.keys(s.added)) if (k[0] === 'l') delete s.added[k]; }
   if (jamoTail(q)) { paintResults(); return; }
@@ -1117,7 +1301,7 @@ async function suggest(q) {
 }
 ACT['q-clear'] = () => { const inp = $('#pl-q'); if (!inp) return; inp.value = ''; onType(); try { inp.focus(); } catch (e) { /* ignore */ } };
 ACT['search-more'] = async () => {
-  const s = ST.search; const q = s.q.trim(); if (q.length < 2 || (s.more && s.more.state === 'loading')) return;
+  const s = ST.search; const q = s.q.trim(); if (q.length < 2 || s.link || (s.more && s.more.state === 'loading')) return;
   clearTimeout(typeT); const seq = s.seq; s.more = { state: 'loading', items: [], attr: '' }; if (s.state === 'loading') s.state = 'done'; paintResults();
   let next;
   try { const j = await H.api('GET', '/places/search?' + placeQs(q)); const have = new Set(s.items.map(llKey)); next = { state: 'done', items: ((j && j.items) || []).filter(x => !have.has(llKey(x))), attr: (j && j.attribution) || '' }; }
@@ -1126,8 +1310,15 @@ ACT['search-more'] = async () => {
   s.more = next; paintResults();
 };
 ACT['add-result'] = async (d) => {
-  const s = ST.search; const x = ({ s: s.items, m: s.more ? s.more.items : [], l: s.local, r: recoOf(trip()) }[d.k] || [])[+d.i]; const key = d.k + d.i; if (!x) return;
-  const t = trip();
+  const s = ST.search; const x = ({ s: s.items, m: s.more ? s.more.items : [], l: s.local, r: recoOf(trip()), k: s.link && s.link.item ? [s.link.item] : [] }[d.k] || [])[+d.i]; const key = d.k + d.i; if (!x) return;
+  const t = trip(); const loc = topLocate();
+  if (loc) {   // 위치 정하기: 새로 담지 않고 그 줄의 위치가 된다
+    if (s.busy && s.busy[key]) return;
+    if (!C.hasLL(x) && x.pid) { (s.busy || (s.busy = {}))[key] = 1; const ok = await resolvePlace(x); delete s.busy[key]; if (ST.search !== s || trip() !== t) return; if (!ok) { toast(tr('위치를 불러오지 못했어요.')); return; } }
+    if (!C.hasLL(x)) return;
+    setItemPlace(t, loc, x); ST.search = newSearch(); ST.stack.pop(); if (ST.stack.length) renderScreen(); else closeScreens();
+    toast(tr('‘{n}’의 위치를 정했어요.', { n: loc.name })); return;
+  }
   if (s.added[key]) {   // 한 번 더 누르면 방금 담은 것을 뺀다
     const it = t.items.find(i => i.id === s.added[key]); if (it) { it.del = true; C.touch(it); persist(t); }
     delete s.added[key]; s.count = Math.max(0, s.count - 1); toast(tr('‘{n}’ 뺐어요.', { n: x.name }));
@@ -1135,7 +1326,7 @@ ACT['add-result'] = async (d) => {
     if (s.busy && s.busy[key]) return;   // 위치를 받는 중에 한 번 더 누름
     let ok = true;
     if (!C.hasLL(x) && x.pid) { (s.busy || (s.busy = {}))[key] = 1; ok = await resolvePlace(x); delete s.busy[key]; if (ST.search !== s || trip() !== t) return; }
-    const o = { name: x.name, addr: x.addr || '', src: x.src || '' }; if (C.hasLL(x)) { o.lat = +x.lat; o.lon = +x.lon; } if (hasImg(x)) o.img = x.img;
+    const o = { name: x.name, addr: x.addr || '', src: x.src || '' }; if (C.hasLL(x)) { o.lat = +x.lat; o.lon = +x.lon; } if (hasImg(x)) o.img = x.img; if (x.link) o.link = x.link;
     s.added[key] = addItem(t, topDay(), o).id; s.count++; toast(ok ? tr('‘{n}’ 담았어요.', { n: x.name }) : tr('‘{n}’ 이름만 담았어요. 위치는 불러오지 못했어요.', { n: x.name }));
   }
   paintResults();
@@ -1154,7 +1345,7 @@ ACT['add-name'] = () => {
 };
 // 지도에서 직접 찍기: 위 검색창으로 지도를 옮긴 뒤 핀 끝을 맞춘다
 const PK = { seq: 0, items: [] };
-ACT.pick = () => show('pick', { day: topDay() });
+ACT.pick = () => { const loc = topLocate(); show('pick', { day: topDay(), locate: loc ? loc.id : null }); };
 SCREENS.pick = (p) => ({ full: true,
   html: `<div class="pl-pick"><header class="sd-top"><button type="button" class="top-btn" data-act="back" aria-label="${esc(tr('뒤로'))}">${BACK_SVG}</button><div class="sd-top-title">${esc(tr('지도에서 자리 고르기'))}</div></header>
     <div class="pl-pick-map"><canvas id="pl-pickmap"></canvas><div class="pl-pin"></div>
@@ -1163,9 +1354,11 @@ SCREENS.pick = (p) => ({ full: true,
     <div class="pl-pick-panel"><p class="caption">${esc(tr('지도를 움직여 핀 끝을 원하는 자리에 맞춰 주세요.'))}</p><div class="field"><input id="pl-pick-name" maxlength="60" autocomplete="off" placeholder="${esc(tr('장소 이름'))}"></div><button type="button" class="btn primary" data-act="pick-ok">${esc(tr('여기로 정하기'))}</button></div></div>`,
   after: () => {
     const t = trip(); const cv = $('#pl-pickmap'); if (!cv || !root.PlannerMap) return;
-    const near = C.dayItems(t, p.day).filter(C.hasLL).pop() || C.live(t.items).filter(C.hasLL).pop(); const c = near ? [near.lat, near.lon] : tripCenter(t);
+    const loc = p.locate ? t.items.find(x => x.id === p.locate && !x.del) : null;   // 위치 정하기: 그 줄의 이름을 미리 적어 두고, 이미 위치가 있으면 거기서 시작
+    const near = (loc && C.hasLL(loc) ? loc : null) || C.dayItems(t, p.day).filter(C.hasLL).pop() || C.live(t.items).filter(C.hasLL).pop(); const c = near ? [near.lat, near.lon] : tripCenter(t);
+    if (loc) { const n = $('#pl-pick-name'); if (n) n.value = loc.name; }
     makeMap(cv, (m) => {
-      if (c) m.setView(c[0], c[1], near ? 14 : 12);
+      if (c) m.setView(c[0], c[1], near ? (near === loc ? 16 : 14) : 12);
       m.setData({ markers: C.live(t.items).filter(C.hasLL).map(i => ({ lat: i.lat, lon: i.lon, label: '', color: '#8B95A1' })) });
     }, { get: () => pickMap, set: (m) => { pickMap = m; } });
     PK.items = []; const q = $('#pl-pick-q');
@@ -1191,8 +1384,14 @@ ACT['pick-go'] = async (d) => {
 };
 ACT['pick-ok'] = () => {
   const name = $('#pl-pick-name').value.trim(); if (!name) { toast(tr('장소 이름을 적어 주세요.')); $('#pl-pick-name').focus(); return; }
-  if (!pickMap) return; const v = pickMap.view; const top = ST.stack[ST.stack.length - 1];
-  addItem(trip(), top.p.day, { name, lat: +v.lat.toFixed(6), lon: +v.lon.toFixed(6), src: 'pin' });
+  if (!pickMap) return; const v = pickMap.view; const top = ST.stack[ST.stack.length - 1]; const t = trip();
+  const loc = top.p.locate ? t.items.find(x => x.id === top.p.locate && !x.del) : null;
+  if (top.p.locate) {   // 위치 정하기: 그 줄의 위치만 바꾼다(이름을 고쳐 적었으면 이름도)
+    if (loc) { if (name !== loc.name) loc.name = name.slice(0, 60); setItemPlace(t, loc, { lat: v.lat, lon: v.lon, src: 'pin' }); }
+    ST.search = newSearch(); ST.stack.pop(); ST.stack.pop(); if (ST.stack.length) renderScreen(); else closeScreens();
+    if (loc) toast(tr('‘{n}’의 위치를 정했어요.', { n: loc.name })); return;
+  }
+  addItem(t, top.p.day, { name, lat: +v.lat.toFixed(6), lon: +v.lon.toFixed(6), src: 'pin' });
   ST.stack.pop(); ST.stack.pop(); if (ST.stack.length) renderScreen(); else closeScreens();   // 고르기 → 추가 화면을 닫고 일정으로
   toast(tr('‘{n}’ 담았어요.', { n: name }));
 };
@@ -1991,6 +2190,47 @@ function takeStayLink(url, title) {
 }
 let STAYLINK = null;
 ACT['staylink-to'] = async (d) => { const t = ST.trips.find(x => x.id === d.id && !x.del); const L = STAYLINK; STAYLINK = null; if (!t || !L) return; closeSheet(); openTrip(t.id, 'plan'); await addCand(t, L.url, L.title); if (trip() === t) candSheet(); };
+
+// ---------- 지도 링크로 장소 담기 ----------
+// 구글 지도 · 애플 지도 앱에서 장소를 '공유' → 여행여권을 고르면(또는 그 링크를 붙여 넣으면) 그 이름과 자리로 일정에 담는다. 검색에 안 나오는 곳을 넣는 길이다.
+// 어느 여행인지는 숙소 링크와 같은 순서로 정한다(열려 있는 여행 → 메인 여행 → 하나뿐인 여행 → 고르기). 그다음 이름을 확인하고 날짜를 골라 담는다.
+let pendingMapLink = null, MAPLINK = null, MLK = null;
+function takeMapLink(url, title) {
+  if (!ST.ready) { pendingMapLink = { url, title }; return; }
+  const td = C.today(); const open = trip(); const live = ST.trips.filter(t => !t.del && !t.sample && C.tripStatus(t, td) !== 'past');
+  const go = (t) => { closeSheet(); if (ST.tripId !== t.id || !ST.stack.length) openTrip(t.id, 'plan'); mapLinkSheet(t, url, title); };
+  if (open && !open.sample && !open.del) { go(open); return; }
+  const main = mainTrip(); if (main) { go(main); return; }
+  if (live.length === 1) { go(live[0]); return; }
+  if (!live.length) { toast(tr('먼저 여행을 만들어 주세요. 그 뒤에 지도 링크를 다시 보내면 일정에 담을 수 있어요.')); return; }
+  MAPLINK = { url, title };
+  sheet(`<div class="sheet-title">${esc(tr('어느 여행에 담을까요?'))}</div><ul class="rows">${live.map(t => `<li class="row tap" data-act="maplink-to" data-id="${esc(t.id)}"><span class="pl-thumb ic">${PIN_SVG}</span><div class="row-body"><div class="row-title">${esc(t.title || tr('이름 없는 여행'))}</div><div class="row-desc">${esc(rangeText(t))}</div></div><span class="chev"></span></li>`).join('')}</ul><button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('닫기'))}</button>`);
+}
+ACT['maplink-to'] = (d) => { const t = ST.trips.find(x => x.id === d.id && !x.del); const L = MAPLINK; MAPLINK = null; if (!t || !L) return; closeSheet(); openTrip(t.id, 'plan'); mapLinkSheet(t, L.url, L.title); };
+async function mapLinkSheet(t, url, title) {
+  const L = MLK = { url, tripId: t.id, state: 'loading', item: null }; paintMapLink();
+  const r = await resolveMapLink(url, title); if (MLK !== L) return;   // 그사이 다른 링크가 왔다
+  if (!$('#pl-ml-wait') || !trip() || trip().id !== L.tripId) { MLK = null; return; }   // 읽는 동안 시트를 닫았거나 다른 것을 열었다 → 다시 띄우지 않는다
+  L.item = r; L.state = r && C.hasLL(r) ? 'done' : 'none'; paintMapLink();
+}
+function paintMapLink() {
+  const L = MLK; const t = trip(); if (!L || !t) return; const days = C.tripDays(t); const x = L.item || {};
+  const cur = ST.sec === 'plan' && ST.day && ST.day !== 'all' && days.includes(ST.day) ? ST.day : '';   // 보고 있던 날이 있으면 그 날, 아니면 가고 싶은 곳
+  const body = L.state === 'loading' ? `<p class="pl-hint" id="pl-ml-wait">${esc(tr('지도 링크를 읽는 중…'))}</p><button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('닫기'))}</button>`
+    : `<div class="field"><label for="pl-ml-name">${esc(tr('이름'))}</label><input id="pl-ml-name" maxlength="60" autocomplete="off" value="${esc(x.name || '')}" placeholder="${esc(tr('장소 이름'))}"></div>${x.addr ? `<p class="desc">${esc(x.addr)}</p>` : ''}
+      ${L.state === 'none' ? `<div class="pl-note">${esc(tr('이 링크에서 위치를 읽지 못했어요.') + ' ' + tr('이름만 담아 두고 일정에서 위치를 정할 수 있어요.'))}</div>` : x.approx ? `<div class="pl-note">${esc(tr('위치가 정확하지 않을 수 있어요. 담은 뒤 지도에서 확인해 주세요.'))}</div>` : ''}
+      <div class="pl-flabel">${esc(tr('날짜'))}</div><div class="chips small" id="pl-ml-day">${days.map((d, i) => `<button type="button" class="chip ${cur === d ? 'active' : ''}" data-v="${d}">${esc(tr('{n}일차', { n: i + 1 }))}</button>`).join('')}<button type="button" class="chip ${cur ? '' : 'active'}" data-v="">${esc(tr('가고 싶은 곳'))}</button></div>
+      <div class="pl-sheet-acts"><button type="button" class="btn secondary" data-act="sheet-close">${esc(tr('취소'))}</button><button type="button" class="btn primary" data-act="maplink-add">${esc(tr('담기'))}</button></div>`;
+  sheet(`<div class="sheet-title">${esc(tr('지도 링크로 장소 담기'))}</div><p class="pl-sum pl-ml-trip">${esc(tr('{d}에 담아요.', { d: t.title || tr('이름 없는 여행') }))}</p>${body}`, () => chipGroup('#pl-ml-day'));
+}
+ACT['maplink-add'] = () => {
+  const L = MLK; const t = trip(); if (!L || !t || t.id !== L.tripId || L.state === 'loading') return; const x = L.item || {};
+  const name = ($('#pl-ml-name').value || '').trim().slice(0, 60); if (!name) { toast(tr('장소 이름을 적어 주세요.')); $('#pl-ml-name').focus(); return; }
+  const day = chipVal('#pl-ml-day') || null; const o = { name, addr: x.addr || '', src: x.src || '' }; if (C.hasLL(x)) { o.lat = +x.lat; o.lon = +x.lon; } if (x.link) o.link = x.link;
+  addItem(t, day, o); MLK = null; closeSheet();
+  ST.sec = 'plan'; ST.day = day; ST.edit = false; while (ST.stack.length > 1) ST.stack.pop(); renderScreen(true);   // 담은 날의 일정으로
+  toast(tr('‘{n}’ 담았어요.', { n: name }));
+};
 
 // '도착지 추가하기' · '출발지 추가하기': 저장해 둔 가는 편의 마지막 도착지(첫날 일정 맨 앞)·오는 편의 첫 출발지(마지막 날 일정 맨 끝)를 장소로 불러온다.
 // 표에는 이름만 있으므로 위치는 그 이름으로 찾아 붙이고, 못 찾으면 이름만 넣는다. 넣고 나면 거기서 다음 장소까지의 이동 수단을 고를 수 있다.
@@ -3087,10 +3327,11 @@ async function load() {
   syncAll(true);
   if (H.onReady) { try { H.onReady({ ongoing: Planner.hasOngoing(), main: pend ? null : ((mainTrip() || {}).id || null) }); } catch (e) { /* ignore */ } }
   if (pendingStayLink) { const L = pendingStayLink; pendingStayLink = null; setTimeout(() => { H.showTab('trip'); takeStayLink(L.url, L.title); }, 400); }
+  if (pendingMapLink) { const L = pendingMapLink; pendingMapLink = null; setTimeout(() => { H.showTab('trip'); takeMapLink(L.url, L.title); }, 400); }
   if (waiting()) closeScreens();   // 앱이 메인 여행을 띄우지 않았으면(다른 화면으로 시작) 덮개를 걷는다
 }
 // 사용 통계(관리자 화면): 의미 있는 동작만 센다 — 앱(app.js 의 Mx)이 있을 때만. 이름과 횟수만 보낸다
-const MX_ACT = { 'new-done': 'trip.create', open: 'trip.open', 'add-result': 'place.add', 'add-name': 'place.add', 'pick-ok': 'place.add', 'exp-save': 'expense.save', 'diary-save': 'diary.save', 'chk-add': 'check.add',
+const MX_ACT = { 'new-done': 'trip.create', open: 'trip.open', 'add-result': 'place.add', 'add-name': 'place.add', 'pick-ok': 'place.add', 'maplink-add': 'place.add', 'add-linkname': 'place.add', 'exp-save': 'expense.save', 'diary-save': 'diary.save', 'chk-add': 'check.add',
   'stay-save': 'stay.save', 'way-save': 'way.save', 'ticket-pick': 'ticket.upload', 'ai-plan': 'ai.plan', 'ai-send': 'ai.chat', 'ai-pay-ad': 'ai.ad', 'ai-pay-buy': 'ai.buy', 'share-link': 'trip.share', 'share-friend': 'trip.share',
   'share-send': 'trip.share', 'share-text': 'trip.share', 'invite-copy': 'trip.invite', taxi: 'taxi.show', calc: 'fx.calc', 'q-calc': 'fx.calc', settle: 'settle.view', 'settle-done': 'settle.done', 'map-app': 'route.app', 'day-app': 'route.app',
   'cand-add': 'stay.cand', 'optimize-ok': 'route.optimize', 'dy-share': 'diary.share', 'file-open': 'file.open' };
@@ -3273,8 +3514,8 @@ const Planner = {
   /** 다른 화면용: 내 여행 목록(간단히) · 공유 문서 만들기 · 공유 문서를 내 여행으로 가져오기(가져온 여행을 연다) */
   /** 여행 탭 목록의 구역: 'now'(내 여행: 메인·여행 중·예정) | 'past'(끝난 여행) */
   listView(v) { ST.listView = v === 'past' ? 'past' : 'now'; renderList(); },
-  /** 다른 앱에서 공유한 숙소 링크를 비교 리스트에 넣는다 */
-  addStayLink(url, title) { H.showTab('trip'); takeStayLink(String(url || ''), String(title || '')); },
+  /** 다른 앱에서 공유한 링크: 지도 링크(구글 지도 · 애플 지도)면 장소로 담고, 그 밖(숙소 사이트)은 숙소 비교 리스트에 넣는다 */
+  addStayLink(url, title) { H.showTab('trip'); const lk = C.mapLinkOf(String(url || '')); if (lk) takeMapLink(lk, String(title || '')); else takeStayLink(String(url || ''), String(title || '')); },
   /** 여권 탭의 '여행일기': 모든 여행의 일기를 그린다 · 일기 하나를 연다 */
   diaryFeed(el) { if (el) diaryFeed(el); },
   openDiary(tripId, day) { if (!ST.trips.some(x => x.id === tripId && !x.del)) return; H.showTab('trip'); openTrip(tripId, 'diary'); DY = null; show('diary', { day }); },
@@ -3282,7 +3523,7 @@ const Planner = {
   docOf(id) { const t = ST.trips.find(x => x.id === id && !x.del); return t ? shareDoc(t) : null; },
   importDoc(doc, from) { const t = importDoc(doc, from); openTrip(t.id); return t.id; },
   get busy() { return ST.stack.length > 0; },
-  _debug: { ST, C, PIC, picSync, ACT, startNew, exAdd, expenseCsv, refreshNow, takeRemote, dropTombs, openInvite, unpark, parkTrips, tripFileIds, keptFileIds, notifPlan, aiPay, mainTrip, mainTick, fixEnds, userPlaces, openTrip, closeScreens, renderScreen, refreshFx, shareDoc, planText, syncAll, pushTrip, pullTrip, SY, AIS, applyPlan, refreshAi, get host() { return H; }, get pickMap() { return pickMap; } },   // 헤드리스 시험용
+  _debug: { ST, C, PIC, picSync, ACT, resolveMapLink, takeMapLink, startNew, exAdd, expenseCsv, refreshNow, takeRemote, dropTombs, openInvite, unpark, parkTrips, tripFileIds, keptFileIds, notifPlan, aiPay, mainTrip, mainTick, fixEnds, userPlaces, openTrip, closeScreens, renderScreen, refreshFx, shareDoc, planText, syncAll, pushTrip, pullTrip, SY, AIS, applyPlan, refreshAi, get host() { return H; }, get pickMap() { return pickMap; } },   // 헤드리스 시험용
 };
 root.Planner = Planner;
 })(typeof self !== 'undefined' ? self : globalThis);

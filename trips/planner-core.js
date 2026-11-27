@@ -398,6 +398,96 @@ const Store = (() => {
   };
 })();
 
+// ---------- 사진으로 여행 기록: 사진의 시각 · 자리로 하루하루 머문 곳을 찾는다 ----------
+const localYmd = (tSec, tz) => { const d = new Date((tSec + tz) * 1000); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); };
+const localHm = (tSec, tz) => { const d = new Date((tSec + tz) * 1000); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
+/** photos: [{ t(UTC 초), lat, lon, id }](아무 순서) · tzOf(p) → 그 자리의 표준시(UTC 와의 차이, 초) · from, to: 'YYYY-MM-DD'(그곳의 날짜)
+    → [{ day, photos(그 날 위치가 있는 사진 수), places: [{ lat, lon, t0, t1, tz, n(사진 수), time: 'HH:MM', stay(분), ids: [사진 번호 몇 개] }] }] — 사진이 있는 날만, 시간순
+    규칙: ① 시간순으로 훑으며 반경 R(기본 250m) 안의 사진을 한곳으로 묶는다 ② 잠깐 벗어났다 돌아온 것(사진 1~2장 · 5분 안)은 앞뒤를 합친다 ③ 바로 옆(0.6R)끼리 합친다
+    ④ 사진 2장 이상이거나 2분 넘게 머문 곳만 남긴다(지나가며 찍은 한 장은 뺀다. 그런 곳뿐인 날은 한 장짜리도 6곳까지) ⑤ skip(c) 가 참인 곳(집)은 뺀다 ⑥ 하루 최대 12곳(사진 많은 곳부터, 순서는 시간순) */
+function photoVisits(photos, tzOf, from, to, o) {
+  o = o || {}; const R = o.radius || 0.25, MAX = o.maxPerDay || 12; const byDay = new Map();
+  for (const p of photos || []) {
+    if (!p || !Number.isFinite(p.t) || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || (p.lat === 0 && p.lon === 0)) continue;
+    const tz = tzOf(p); const day = localYmd(p.t, tz); if (day < from || day > to) continue;
+    if (!byDay.has(day)) byDay.set(day, []); byDay.get(day).push({ t: p.t, lat: p.lat, lon: p.lon, id: p.id, tz });
+  }
+  const span = (c) => c.m[c.m.length - 1].t - c.m[0].t;
+  const join = (a, b) => { const m = a.m.concat(b.m).sort((x, y) => x.t - y.t); return { lat: m.reduce((v, x) => v + x.lat, 0) / m.length, lon: m.reduce((v, x) => v + x.lon, 0) / m.length, m }; };
+  const near = (cl, k) => { for (let i = 1; i < cl.length;) { if (hav(cl[i - 1].lat, cl[i - 1].lon, cl[i].lat, cl[i].lon) <= R * k) cl.splice(i - 1, 2, join(cl[i - 1], cl[i])); else i++; } return cl; };
+  const out = [];
+  for (const day of Array.from(byDay.keys()).sort()) {
+    const ps = byDay.get(day).sort((a, b) => a.t - b.t); let cl = [], cur = null;
+    for (const p of ps) {
+      if (cur && hav(p.lat, p.lon, cur.lat, cur.lon) <= R) { cur.m.push(p); const n = cur.m.length; cur.lat += (p.lat - cur.lat) / n; cur.lon += (p.lon - cur.lon) / n; }
+      else { cur = { lat: p.lat, lon: p.lon, m: [p] }; cl.push(cur); }
+    }
+    for (let i = 1; i < cl.length - 1;) { const a = cl[i - 1], b = cl[i], c = cl[i + 1]; if (b.m.length <= 2 && span(b) < 300 && hav(a.lat, a.lon, c.lat, c.lon) <= R) { cl.splice(i - 1, 3, join(a, c)); if (i > 1) i--; } else i++; }
+    near(cl, 0.6);
+    let keep = cl.filter(c => c.m.length >= 2 || span(c) >= 120);
+    if (!keep.length) keep = cl.slice().sort((a, b) => b.m.length - a.m.length).slice(0, 6).sort((a, b) => a.m[0].t - b.m[0].t);
+    near(keep, 0.6);   // 사이의 한 장짜리를 빼고 나니 붙게 된 같은 곳
+    if (o.skip) keep = keep.filter(c => !o.skip(c));
+    if (keep.length > MAX) { const top = new Set(keep.slice().sort((a, b) => b.m.length - a.m.length).slice(0, MAX)); keep = keep.filter(c => top.has(c)); }
+    if (!keep.length) continue;
+    out.push({ day, photos: ps.length, places: keep.map(c => { const t0 = c.m[0].t, t1 = c.m[c.m.length - 1].t, tz = c.m[0].tz;
+      return { lat: +c.lat.toFixed(6), lon: +c.lon.toFixed(6), t0, t1, tz, n: c.m.length, time: localHm(t0, tz), stay: Math.max(10, Math.min(600, Math.round((t1 - t0) / 300) * 5)), ids: c.m.slice(0, 24).map(x => x.id).filter(x => x != null) }; }) });
+  }
+  return out;
+}
+// ---------- 지도 링크(구글 지도 · 애플 지도의 '공유')에서 장소 읽기 ----------
+// 링크의 주소 글자에 적힌 이름과 좌표만 읽는다(서버 app.py parse_map_url 과 같은 규칙). 구글 지도는 장소를 열면 주소가
+// …/maps/place/<이름>/@<화면 가운데>/data=…!3d<위도>!4d<경도> 꼴이 된다 — 핀 자리는 !3d !4d. 폰 앱에서 공유한 짧은 주소는 열어 봐야 이 꼴이 된다(planner.js mapProbeJs).
+const MAP_LL_RE = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*\+?(-?\d{1,3}(?:\.\d+)?)\s*$/;
+function mapSite(host, path) {
+  host = String(host || '').toLowerCase().replace(/\.$/, ''); path = String(path || '');
+  if (host === 'maps.app.goo.gl' || (host === 'goo.gl' && path.indexOf('/maps') === 0)) return 'gmap';
+  if (/^maps\.google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(host) || (/^(www\.)?google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(host) && path.indexOf('/maps') === 0)) return 'gmap';
+  if (host === 'maps.apple.com' || host === 'maps.apple') return 'amap';
+  return '';
+}
+/** 글 속의 지도 링크 하나(없으면 '') */
+function mapLinkOf(text) {
+  const m = /https?:\/\/[^\s<>"']{4,1500}/i.exec(String(text || '')); if (!m) return '';
+  const u = m[0].replace(/[.,)]+$/, ''); try { const x = new URL(u); return mapSite(x.hostname, x.pathname) ? u : ''; } catch (e) { return ''; }
+}
+const mapLL = (a, b) => { const la = +a, lo = +b; return Number.isFinite(la) && Number.isFinite(lo) && la >= -90 && la <= 90 && lo >= -180 && lo <= 180 && !(la === 0 && lo === 0) ? [+la.toFixed(6), +lo.toFixed(6)] : null; };
+/** 페이지 제목에서 장소 이름: '삿포로 맥주 박물관 - Google 지도' · '삿포로 맥주 박물관, Higashi Ward, … - Google 지도에서 탐색하기' → 삿포로 맥주 박물관 */
+function mapTitleName(title) {
+  let s = String(title || '').replace(/\s+/g, ' ').trim().replace(/\s[-–—|·]\s(?:Google|구글|Apple|애플)[^-–—|]*$/i, '').trim();
+  if (!s || /^(Google|구글)\s*(Maps|지도|マップ|地图|地圖)?$/i.test(s) || /^https?:/i.test(s)) return '';
+  return s.split(/,\s|、/)[0].trim().slice(0, 80);
+}
+/** 지도 링크 → { src: 'gmap'|'amap', name, addr, lat, lon, exact } · 지도 링크가 아니면 null. 좌표가 없으면 lat · lon 은 null.
+    exact: 그 장소의 핀 자리인가(화면 가운데 @lat,lon 만 있으면 false). title: 그 페이지의 제목이나 공유할 때 같이 온 글(있으면 이름은 거기서) */
+function parseMapUrl(u, title) {
+  let x; try { x = new URL(String(u || '')); } catch (e) { return null; }
+  const src = mapSite(x.hostname, x.pathname); if (!/^https?:$/.test(x.protocol) || !src) return null;
+  const one = (...ks) => { for (const k of ks) { const v = x.searchParams.get(k); if (v) return v; } return ''; };
+  const dec = (v) => { try { return decodeURIComponent(String(v).replace(/\+/g, ' ')); } catch (e) { return String(v).replace(/\+/g, ' '); } };
+  const out = { src, name: '', addr: '', lat: null, lon: null, exact: false }; let ll = null, exact = false, text = '';
+  if (src === 'amap') {
+    const m = MAP_LL_RE.exec(one('coordinate', 'll', 'sll')); ll = m ? mapLL(m[1], m[2]) : null; exact = !!ll;
+    text = one('name', 'q'); out.addr = one('address').trim().slice(0, 160);
+  } else {
+    let m = /!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/.exec(String(u)); if (m) { ll = mapLL(m[1], m[2]); exact = !!ll; }
+    if (!ll) for (const k of ['q', 'query', 'll', 'destination', 'daddr', 'center']) { m = MAP_LL_RE.exec(one(k)); if (m && mapLL(m[1], m[2])) { ll = mapLL(m[1], m[2]); exact = true; break; } }
+    const path = dec(x.pathname);
+    if (!ll) { m = /\/maps\/(?:search|place)\/(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/.exec(path); if (m) { ll = mapLL(m[1], m[2]); exact = !!ll; } }
+    if (!ll) { m = /\/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/.exec(path); if (m) ll = mapLL(m[1], m[2]); }
+    m = /\/maps\/(?:place|search)\/([^/@]+)/.exec(path);
+    text = (m ? m[1] : '') || (MAP_LL_RE.test(one('q', 'query')) ? '' : one('q', 'query'));
+  }
+  text = String(text || '').replace(/\s+/g, ' ').trim(); if (MAP_LL_RE.test(text) || /^\d{1,3}°/.test(text)) text = '';   // 이름 자리에 좌표가 적힌 핀
+  const named = mapTitleName(title);
+  if (named) {   // 제목의 이름을 쓰고, 주소 글자에서 그 이름을 뗀 나머지가 주소
+    out.name = named;
+    if (!out.addr && text) { const rest = text.indexOf(named) === 0 ? text.slice(named.length) : text.indexOf(',') >= 0 ? text.slice(text.indexOf(',') + 1) : ''; out.addr = rest.replace(/^[\s,]+/, '').trim().slice(0, 160); }
+  } else if (text && !out.addr && text.indexOf(',') >= 0) { out.name = text.slice(0, text.indexOf(',')).trim().slice(0, 80); out.addr = text.slice(text.indexOf(',') + 1).trim().slice(0, 160); }
+  else out.name = text.slice(0, 80);
+  if (ll) { out.lat = ll[0]; out.lon = ll[1]; } out.exact = !!(ll && exact);
+  return out;
+}
 root.PlannerCore = { uid, now, ymd, parseYmd, today, addDays, dayDiff, live, touch, newTrip, tripDays, tripStatus, midKey, seqKeys, bySort, hasLL, hav, legEstimate, legOf, MOVE, dayPart, ways, wayDay, stays, stayOn,
-  STAY_DEFAULT, dayItems, dayPlan, pathKm, bestOrder, optimizeDay, distribute, curInfo, fmtNum, fmtMoney, fxRate, rateText, myRate, expenseHome, totals, myTotals, wallet, budgetOf, budgetInfo, people, ensureMe, shareOf, isPersonal, personalRec, settle, mergeRecs, pubDoc, privDoc, applyRemote, autoVisited, Store };
+  STAY_DEFAULT, dayItems, dayPlan, pathKm, bestOrder, optimizeDay, distribute, curInfo, fmtNum, fmtMoney, fxRate, rateText, myRate, expenseHome, totals, myTotals, wallet, budgetOf, budgetInfo, people, ensureMe, shareOf, isPersonal, personalRec, settle, mergeRecs, pubDoc, privDoc, applyRemote, autoVisited, photoVisits, localYmd, localHm, mapSite, mapLinkOf, mapTitleName, parseMapUrl, Store };
 })(typeof self !== 'undefined' ? self : globalThis);
