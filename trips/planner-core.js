@@ -442,14 +442,14 @@ const MAP_LL_RE = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*\+?(-?\d{1,3}(?:\.\d+)?)\s*$/
 function mapSite(host, path) {
   host = String(host || '').toLowerCase().replace(/\.$/, ''); path = String(path || '');
   if (host === 'maps.app.goo.gl' || (host === 'goo.gl' && path.indexOf('/maps') === 0)) return 'gmap';
-  if (/^maps\.google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(host) || (/^(www\.)?google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(host) && path.indexOf('/maps') === 0)) return 'gmap';
+  if (/^maps\.google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/.test(host) || (/^(www\.)?google\.(?:com|cat|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/.test(host) && path.indexOf('/maps') === 0)) return 'gmap';   // 구글의 나라별 주소 꼴만(google.com · .<나라> · .co.<나라> · .com.<나라>) — maps.google.abc.io 같은 남의 주소는 아니다(서버 map_site 와 같은 규칙)
   if (host === 'maps.apple.com' || host === 'maps.apple') return 'amap';
   return '';
 }
 /** 글 속의 지도 링크 하나(없으면 '') */
 function mapLinkOf(text) {
-  const m = /https?:\/\/[^\s<>"']{4,1500}/i.exec(String(text || '')); if (!m) return '';
-  const u = m[0].replace(/[.,)]+$/, ''); try { const x = new URL(u); return mapSite(x.hostname, x.pathname) ? u : ''; } catch (e) { return ''; }
+  const m = /https?:\/\/[^\s<>"]{4,1500}/i.exec(String(text || '')); if (!m) return '';   // 작은따옴표는 주소에 들 수 있다(…/place/Joe's+Pizza/…) — 전에는 거기서 끊겨 이름 · 좌표를 잃었다
+  const u = m[0].replace(/[.,)'’]+$/, ''); try { const x = new URL(u); return mapSite(x.hostname, x.pathname) ? u : ''; } catch (e) { return ''; }   // 문장 끝에 붙은 부호만 뗀다
 }
 const mapLL = (a, b) => { const la = +a, lo = +b; return Number.isFinite(la) && Number.isFinite(lo) && la >= -90 && la <= 90 && lo >= -180 && lo <= 180 && !(la === 0 && lo === 0) ? [+la.toFixed(6), +lo.toFixed(6)] : null; };
 /** 페이지 제목에서 장소 이름: '삿포로 맥주 박물관 - Google 지도' · '삿포로 맥주 박물관, Higashi Ward, … - Google 지도에서 탐색하기' → 삿포로 맥주 박물관 */

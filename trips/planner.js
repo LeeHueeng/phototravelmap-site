@@ -95,7 +95,8 @@ const dtRange = (a, b) => { if (!a) return ''; if (!b) return dtText(a); const d
 const fxNow = () => (ST.fx && ST.fx.rates ? ST.fx : PD.REF_FX);
 const trip = () => ST.trips.find(t => t.id === ST.tripId) || null;
 const dayNo = (t, d) => C.tripDays(t).indexOf(d) + 1;
-const num = (v) => { const n = parseFloat(String(v == null ? '' : v).replace(/[^\d.]/g, '')); return Number.isFinite(n) ? n : NaN; };
+const num = (v) => { let x = String(v == null ? '' : v); if (x.indexOf('.') < 0 && /,\d{1,2}$/.test(x.trim()) && (x.match(/,/g) || []).length === 1) x = x.replace(',', '.');   // 쉼표가 소수점인 나라의 숫자판(12,50 → 12.5). 1,250 처럼 세 자리가 따르면 자릿수 쉼표다
+  const n = parseFloat(x.replace(/[^\d.]/g, '')); return Number.isFinite(n) ? n : NaN; };
 const homeCur = () => ST.prefs.home || PD.HOME_BY_LANG[LANG()] || 'USD';
 const myName = () => (root.Account && root.Account.session && root.Account.session.name) || '';
 const pname = (t, p) => (p && t && p.id === t.meId ? tr('나') : (p && p.name) || '');   // 참여자 이름(나는 '나')
@@ -648,6 +649,8 @@ ACT['ppl-rm'] = async (d) => {
   }
   const used = C.live(t.expenses).filter(e => e.payer === p.id || (e.share && e.share.mode === 'some' && (e.share.ids || []).includes(p.id))).length;
   if (used) { closeSheet(); const ok = await H.askConfirm(tr('{name} 님을 뺄까요?', { name: p.name }), tr('이 사람이 낸 지출 {n}건은 내가 낸 것으로 계산돼요.', { n: used }), tr('빼기'), true); document.body.style.overflow = 'hidden'; if (!ok) { peopleSheet(); return; } }
+  { const me = t.people.some(x => x.id === t.meId && !x.del) ? t.meId : null;   // 안내한 대로 '내가 낸 것'으로 적어 둔다 → 함께 보는 모든 기기에서 같은 정산이 나온다
+    if (me) for (const e of C.live(t.expenses)) if (e.payer === p.id) { e.payer = me; C.touch(e); } }
   p.del = true; C.touch(p); persist(t); renderScreen(); peopleSheet();
 };
 ACT['trip-menu'] = () => {
@@ -1311,10 +1314,10 @@ ACT['search-more'] = async () => {
 };
 ACT['add-result'] = async (d) => {
   const s = ST.search; const x = ({ s: s.items, m: s.more ? s.more.items : [], l: s.local, r: recoOf(trip()), k: s.link && s.link.item ? [s.link.item] : [] }[d.k] || [])[+d.i]; const key = d.k + d.i; if (!x) return;
-  const t = trip(); const loc = topLocate();
+  const t = trip(); const loc = topLocate(); const top0 = ST.stack[ST.stack.length - 1]; const here = () => ST.search === s && trip() === t && ST.stack[ST.stack.length - 1] === top0;   // 위치를 받는 사이 이 화면을 떠났는가
   if (loc) {   // 위치 정하기: 새로 담지 않고 그 줄의 위치가 된다
     if (s.busy && s.busy[key]) return;
-    if (!C.hasLL(x) && x.pid) { (s.busy || (s.busy = {}))[key] = 1; const ok = await resolvePlace(x); delete s.busy[key]; if (ST.search !== s || trip() !== t) return; if (!ok) { toast(tr('위치를 불러오지 못했어요.')); return; } }
+    if (!C.hasLL(x) && x.pid) { (s.busy || (s.busy = {}))[key] = 1; const ok = await resolvePlace(x); delete s.busy[key]; if (!here()) return; if (!ok) { toast(tr('위치를 불러오지 못했어요.')); return; } }
     if (!C.hasLL(x)) return;
     setItemPlace(t, loc, x); ST.search = newSearch(); ST.stack.pop(); if (ST.stack.length) renderScreen(); else closeScreens();
     toast(tr('‘{n}’의 위치를 정했어요.', { n: loc.name })); return;
@@ -1325,7 +1328,7 @@ ACT['add-result'] = async (d) => {
   } else {
     if (s.busy && s.busy[key]) return;   // 위치를 받는 중에 한 번 더 누름
     let ok = true;
-    if (!C.hasLL(x) && x.pid) { (s.busy || (s.busy = {}))[key] = 1; ok = await resolvePlace(x); delete s.busy[key]; if (ST.search !== s || trip() !== t) return; }
+    if (!C.hasLL(x) && x.pid) { (s.busy || (s.busy = {}))[key] = 1; ok = await resolvePlace(x); delete s.busy[key]; if (!here()) return; }
     const o = { name: x.name, addr: x.addr || '', src: x.src || '' }; if (C.hasLL(x)) { o.lat = +x.lat; o.lon = +x.lon; } if (hasImg(x)) o.img = x.img; if (x.link) o.link = x.link;
     s.added[key] = addItem(t, topDay(), o).id; s.count++; toast(ok ? tr('‘{n}’ 담았어요.', { n: x.name }) : tr('‘{n}’ 이름만 담았어요. 위치는 불러오지 못했어요.', { n: x.name }));
   }
@@ -1423,6 +1426,14 @@ function planText(t) {
   return out.join('\n');
 }
 const placeCount = (t) => C.live(t.items).filter(i => i.kind !== 'note').length;
+/** 여행사진의 '여행 결산' 카드(polaroid.js)가 쓰는 숫자 — 며칠 · 번호가 붙는 장소 수(메모 · 숙소 · 도착지/출발지 줄은 빼고, 가고 싶은 곳도 뺀다) · 이동 거리(일정 화면의 어림값을 날마다 더한 것)
+    · 내가 쓴 돈(경비 탭의 '내가 쓴 돈'과 같은 계산, 집 통화) · 동선(좌표가 있는 줄을 날짜 순서대로 [위도, 경도, 몇째 날]). 기기 안에서만 계산한다 */
+function tripRecap(t) {
+  const days = C.tripDays(t); let places = 0, km = 0; const route = [];
+  days.forEach((d, i) => { const its = C.dayItems(t, d); places += its.filter(x => x.kind !== 'note' && !x.stayId && !x.wayId && x.name).length; const p = C.dayPlan(t, d); km += (p && p.km) || 0; for (const it of its) if (it.kind !== 'note' && C.hasLL(it)) route.push([+it.lat, +it.lon, i]); });
+  let spent = 0; try { const tot = C.myTotals(t, fxNow()); spent = tot && tot.all > 0 ? tot.all : 0; } catch (e) { spent = 0; }
+  return { days: days.length, places, km: Math.round(km), spent, spentText: spent > 0 ? money(spent, t.home) : '', people: C.people(t).length, route };
+}
 // 공유 시트: 참여자 목록 → 친구 공유(초대 링크로 들어온 친구는 자기 앱에서 같이 보고 고친다) → 링크 공유(앱 없이 웹에서 일정만 보기) → 글로 보내기
 function shareSheet(msg) {
   const t = trip(); if (!t) return; const ps = C.people(t); const link = t.share && t.share.code ? t.share : null; const cl = t.cloud || null; const inv = cl && cl.inviteUrl ? cl.inviteUrl : '';
@@ -1526,9 +1537,10 @@ function parkTrips(acct, list) {   // 그 계정의 여행(서버에 있는 것)
   if (!out.length) return 0;
   try { const k = KEEP_PRE + acct; const s = new Set(JSON.parse(localStorage.getItem(k) || '[]')); for (const t of out) for (const id of tripFileIds(t)) s.add(id); localStorage.setItem(k, JSON.stringify([...s])); } catch (e) { /* ignore */ }
   if (out.some(t => t.id === (ST.prefs && ST.prefs.mainId))) setMain(null);
-  for (const t of out) {   // 서버에 다 올라가 있는 여행은 폰에서 지운다(다시 로그인하면 서버에서 온다). 아직 못 올린 변경이 있으면 지우지 않고 가려만 둔다(park) — 같은 계정으로 다시 로그인하면 돌아와서 올라간다
+  for (const t of out) {   // 서버에 다 올라가 있는 여행은 폰에서 지운다(다시 로그인하면 서버에서 온다). 아직 못 올린 변경이나 이 기기에만 있는 것이 있으면 지우지 않고 가려만 둔다(park) — 같은 계정으로 다시 로그인하면 돌아와서 서버와 맞춘다
     clearTimeout(SY.timers[t.id]);
-    if (isDirty(t)) { t.park = String(acct); saveQuiet(t); } else C.Store.del(t.id).catch(() => { /* ignore */ });
+    const local = C.live(t.files || []).length > 0 || !!(t.share && t.share.code);   // 올린 표 · 확인서의 목록과 링크 공유 상태는 서버에 없다 → 지우면 다시 로그인해도 돌아오지 않는다(11-27 점검)
+    if (isDirty(t) || local) { t.park = String(acct); saveQuiet(t); } else C.Store.del(t.id).catch(() => { /* ignore */ });
   }
   ST.trips = ST.trips.filter(t => !out.includes(t)); if (ST.tripId && !ST.trips.some(t => t.id === ST.tripId)) { closeSheet(); closeScreens(); }
   if (!ST.stack.length) renderList(); notifSync(0); return out.length;
@@ -1544,7 +1556,7 @@ function dropTombs(keep) {
 // 서버가 보내 준 여행을 폰에 들인다. 폰에 '지운(나간) 표시'로 남아 있던 것이면 그 표시를 버리고 새로 받는다(표시에 남은 예전 계정의 나만 보던 기록을 섞지 않는다)
 function takeRemote(r, uid) {
   let t = ST.trips.find(x => x.id === r.id); if (t && t.del) { ST.trips.splice(ST.trips.indexOf(t), 1); t = null; }
-  const fresh = !t; if (!t) { t = C.newTrip({ id: r.id }); ST.trips.push(t); }
+  const fresh = !t; if (!t) { t = C.newTrip({ id: r.id }); t.u = 0; ST.trips.push(t); }   // u = 0: 방금 만든 빈 그릇이다 → 서버의 나만 보는 설정(내 예산 · 개인 지출 보이기)이 이긴다(applyRemote 가 끝에 서버 시각으로 맞춘다)
   const ch = C.applyRemote(t, r, uid); t.cloud.pushedU = t.u; saveQuiet(t); return { t, changed: fresh || ch };
 }
 function parkForeign() {   // 앱을 켰을 때: 로그아웃 상태인데 서버 여행이 남아 있거나(예전 버전), 다른 계정의 여행이 있으면 내린다
@@ -1602,10 +1614,11 @@ async function dropRemote(t) {
 }
 /** 서버와 맞춘다: 서버에만 있는 여행은 받고, 기기에만 있거나 기기에서 고친 여행은 올린다 */
 async function syncAll(force) {
-  if (!loggedIn() || SY.busy || !ST.ready) return; if (!force && Date.now() - SY.last < 30000) return;
+  if (!loggedIn() || SY.busy || !ST.ready || ST.storeOk === false) return; if (!force && Date.now() - SY.last < 30000) return;   // storeOk: 기기의 여행을 못 읽은 채로 서버 것을 받으면 저장해 둔 것(못 올린 변경)을 덮어쓴다
   SY.busy = true; SY.last = Date.now(); paintCloud(); let changed = false;
   try {
     const j = await H.api('GET', '/trips'); const uid = j.uid; const seen = new Set(); const dead = new Set(j.deleted || []);
+    if (!loggedIn() || (uid != null && myUid() != null && String(uid) !== String(myUid()))) throw Object.assign(new Error('account changed'), { code: 'account_changed' });   // 답을 기다리는 사이 로그아웃했거나 계정이 바뀌었다 → 앞 계정의 여행을 다시 들이지 않는다(아래 catch 가 조용히 끝낸다)
     for (const r of j.trips || []) {
       seen.add(r.id); let t = ST.trips.find(x => x.id === r.id);
       if (t && t.del) {
@@ -1627,7 +1640,7 @@ async function syncAll(force) {
     }
     SY.err = ''; const me = myUid(); if (me != null) { try { localStorage.removeItem(KEEP_PRE + me); } catch (e) { /* ignore */ } }
     for (const t of ST.trips) if (onCloud(t) && !t.del) uploadPhotos(t).catch(() => { /* 다음에 */ });   // 새로 함께 보게 된 여행에 붙여 둔 사진도
-  } catch (e) { SY.err = (e && (e.code || e.message)) || 'error'; log('sync failed: ' + SY.err); }
+  } catch (e) { if (e && e.code === 'account_changed') SY.err = ''; else { SY.err = (e && (e.code || e.message)) || 'error'; log('sync failed: ' + SY.err); } }
   SY.busy = false; paintCloud(); if (changed) { refreshView(); notifSync(); }
 }
 async function pullTrip(t) {   // 함께 보는 여행을 열어 둔 동안 가끔 서버 것을 확인한다
@@ -1959,6 +1972,7 @@ function fileInUse(id) { return keptFileIds().has(id) || ST.trips.some(t => !t.d
 function dropFileIfUnused(id) { if (id && !fileInUse(id)) C.Store.delFile(id).catch(() => { /* ignore */ }); }
 // 어느 여행에도 붙어 있지 않은 파일 본문을 치운다(여행을 지웠을 때 남는 것)
 async function sweepFiles() {
+  if (ST.storeOk === false) return;   // 여행을 못 읽었으면(ST.trips 가 비어 있다) 어느 파일이 쓰이는지 모른다 → 지우지 않는다
   try { const keep = keptFileIds(); for (const t of ST.trips) for (const id of tripFileIds(t)) keep.add(id); for (const k of await C.Store.fileKeys()) if (!(typeof k === 'string' && k.startsWith('img:')) && !keep.has(k)) await C.Store.delFile(k); } catch (e) { log('file sweep failed: ' + (e && e.message)); }
 }
 
@@ -2179,7 +2193,7 @@ ACT['cand-pick'] = (d) => {   // 후보를 숙소로: 숙소 창에 이름·금�
 let pendingStayLink = null;
 function takeStayLink(url, title) {
   if (!ST.ready) { pendingStayLink = { url, title }; return; }
-  const td = C.today(); const open = trip(); const live = ST.trips.filter(t => !t.del && !t.sample && C.tripStatus(t, td) !== 'past');
+  const td = C.today(); const open = ST.stack.length ? trip() : null; const live = ST.trips.filter(t => !t.del && !t.sample && C.tripStatus(t, td) !== 'past');   // 열려 있던 여행 = 지금 여행 화면이 떠 있는 것만
   const go = async (t) => { closeSheet(); if (ST.tripId !== t.id || !ST.stack.length) openTrip(t.id, 'plan'); await addCand(t, url, title); if (trip() === t) candSheet(); };
   if (open && !open.sample && !open.del) { go(open); return; }
   const main = mainTrip(); if (main) { go(main); return; }
@@ -2197,7 +2211,7 @@ ACT['staylink-to'] = async (d) => { const t = ST.trips.find(x => x.id === d.id &
 let pendingMapLink = null, MAPLINK = null, MLK = null;
 function takeMapLink(url, title) {
   if (!ST.ready) { pendingMapLink = { url, title }; return; }
-  const td = C.today(); const open = trip(); const live = ST.trips.filter(t => !t.del && !t.sample && C.tripStatus(t, td) !== 'past');
+  const td = C.today(); const open = ST.stack.length ? trip() : null; const live = ST.trips.filter(t => !t.del && !t.sample && C.tripStatus(t, td) !== 'past');   // 열려 있던 여행 = 지금 여행 화면이 떠 있는 것만
   const go = (t) => { closeSheet(); if (ST.tripId !== t.id || !ST.stack.length) openTrip(t.id, 'plan'); mapLinkSheet(t, url, title); };
   if (open && !open.sample && !open.del) { go(open); return; }
   const main = mainTrip(); if (main) { go(main); return; }
@@ -3313,7 +3327,12 @@ function markVisited() {   // 사진이 찍힌 자리로 일정의 방문 완료
   }
 }
 async function load() {
-  try { ST.trips = (await C.Store.all()) || []; ST.storeOk = true; } catch (e) { ST.trips = []; ST.storeOk = false; log('store open failed: ' + (e && e.message)); }   // storeOk: 못 읽었으면 저장해 둔 사진을 '안 쓰는 것'으로 지우지 않게
+  try { ST.trips = (await C.Store.all()) || []; ST.storeOk = true; }
+  catch (e) {   // 처음 읽기가 실패하면(여는 데 오래 걸렸거나 잠깐의 오류) 한 번 더 읽어 본다 — 못 읽은 채로 두면 이번 실행 동안 여행이 비어 보이고 서버와도 맞추지 않는다
+    log('store open failed: ' + (e && e.message));
+    try { await new Promise(r => setTimeout(r, 800)); ST.trips = (await C.Store.all()) || []; ST.storeOk = true; }
+    catch (e2) { ST.trips = []; ST.storeOk = false; log('store open failed again: ' + (e2 && e2.message)); }   // storeOk: 못 읽었으면 저장해 둔 사진을 '안 쓰는 것'으로 지우지 않고, 서버 것으로 덮어쓰지도 않는다
+  }
   { const me = myUid(); ST.trips = ST.trips.filter(t => t.park == null || (me != null && String(t.park) === String(me))); for (const t of ST.trips) if (t.park != null) { delete t.park; saveQuiet(t); } }   // 다른 계정 몫으로 가려 둔 여행은 저장소에만 둔다
   setTimeout(sweepFiles, 8000);   // 어느 여행에도 붙어 있지 않은 파일 본문을 치운다
   try { ST.fx = (await C.Store.getMeta('fx')) || null; ST.prefs = (await C.Store.getMeta('prefs')) || {}; } catch (e) { /* ignore */ }
@@ -3521,9 +3540,10 @@ const Planner = {
   openDiary(tripId, day) { if (!ST.trips.some(x => x.id === tripId && !x.del)) return; H.showTab('trip'); openTrip(tripId, 'diary'); DY = null; show('diary', { day }); },
   tripsBrief() { return ST.trips.filter(t => !t.del && !t.sample).map(t => ({ id: t.id, title: t.title, start: t.start, end: t.end, places: placeCount(t) })); },
   docOf(id) { const t = ST.trips.find(x => x.id === id && !x.del); return t ? shareDoc(t) : null; },
+  recapOf(id) { const t = ST.trips.find(x => x.id === id && !x.del); return t ? tripRecap(t) : null; },   // 여행 결산 카드의 숫자(위 tripRecap)
   importDoc(doc, from) { const t = importDoc(doc, from); openTrip(t.id); return t.id; },
   get busy() { return ST.stack.length > 0; },
-  _debug: { ST, C, PIC, picSync, ACT, resolveMapLink, takeMapLink, startNew, exAdd, expenseCsv, refreshNow, takeRemote, dropTombs, openInvite, unpark, parkTrips, tripFileIds, keptFileIds, notifPlan, aiPay, mainTrip, mainTick, fixEnds, userPlaces, openTrip, closeScreens, renderScreen, refreshFx, shareDoc, planText, syncAll, pushTrip, pullTrip, SY, AIS, applyPlan, refreshAi, get host() { return H; }, get pickMap() { return pickMap; } },   // 헤드리스 시험용
+  _debug: { ST, C, PIC, picSync, ACT, num, resolveMapLink, takeMapLink, startNew, exAdd, expenseCsv, refreshNow, takeRemote, dropTombs, openInvite, unpark, parkTrips, tripFileIds, keptFileIds, notifPlan, aiPay, mainTrip, mainTick, fixEnds, userPlaces, openTrip, closeScreens, renderScreen, refreshFx, shareDoc, planText, syncAll, pushTrip, pullTrip, SY, AIS, applyPlan, refreshAi, get host() { return H; }, get pickMap() { return pickMap; } },   // 헤드리스 시험용
 };
 root.Planner = Planner;
 })(typeof self !== 'undefined' ? self : globalThis);
