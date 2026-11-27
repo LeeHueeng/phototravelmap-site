@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://leehueeng.github.io/phototravelmap-site/sitemap.xml
-Sitemap: https://leehueeng.github.io/phototravelmap-site/community/sitemap.xml
+Sitemap: https://passport.hueeng.com/sitemap.xml
+Sitemap: https://passport.hueeng.com/community/sitemap.xml
