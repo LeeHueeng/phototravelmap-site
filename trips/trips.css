@@ -1,6 +1,18 @@
 /* trips.css — 여행여권 웹의 '내 여행' 페이지(…/trips/)에만 쓰는 규칙. 원본은 webver/trips.css — 사이트의 trips/trips.css 는 scripts/build_web_community.py 가 복사한 것이다.
    읽는 순서: base.css(앱 style.css 에서 뽑은 것) → planner.css(앱과 같은 파일) → ../community/web.css(머리 줄 · 아래 줄 · 웹 대화창) → 이 파일.
    여행 화면(#pl-screen)은 앱처럼 화면을 가득 덮고, 본문은 가운데 560px 줄에 놓인다(넓은 화면에서도 같다). */
+/* ---------- 여행 화면이 열려 있어도 머리 줄(여행 · 커뮤니티 · 계정)은 남는다 — 11-27 사용자: "navbar 지우지마" ----------
+   전에는 여행 화면(#pl-screen)이 앱처럼 화면을 가득 덮어 머리 줄이 사라졌다. 이제 머리 줄은 늘 맨 위에 붙어 있고(목록을 내려도), 여행 화면 · 지도에서 자리 고르기는 그 아래에서 시작한다.
+   --wv-top-h = 머리 줄 높이: web.css 의 .wv-top-in 높이(56px, 720px 부터 64px) + 아래 테두리 1px + 위쪽 안전 영역. 머리 줄 높이를 바꾸면 여기도 같이 바꿀 것(web-trips-test 가 잰다).
+   층: 머리 줄(65)은 여행 화면(64)보다 위, 시트(68) · 웹 대화창(90)보다 아래 — 시트가 뜨면 머리 줄도 같이 어두워진다. */
+:root { --wv-top-h: calc(57px + env(safe-area-inset-top)); }
+@media (min-width: 720px) { :root { --wv-top-h: calc(65px + env(safe-area-inset-top)); } }
+.wv-top { position: sticky; top: 0; z-index: 65; }
+#pl-screen, .pl-pick { top: var(--wv-top-h); }
+.pl-ptr { top: calc(var(--wv-top-h) + 60px); }
+/* 글을 적는 동안(키보드가 화면을 덮는 브라우저 — planner.js 가 html.pl-kb 를 붙이고 planner.css 가 여행 화면을 보이는 영역에 맞춘다): 보이는 곳이 좁아 여행 화면이 머리 줄 자리까지 쓴다.
+   키보드가 내려가면 머리 줄이 다시 보인다(아래 탭이 그동안 숨는 것과 같다). planner.css 의 html.pl-kb 규칙이 위의 top 보다 세서 자리는 그쪽이 정하고, 여기서는 머리 줄 위로 올리기만 한다 */
+html.pl-kb #pl-screen { z-index: 66; }
 .wv-trips-note { margin: -2px 0 12px; }
 .tripreco-seg { margin: 4px 0 14px; }
 .page[data-page="trip"] { width: 100%; box-sizing: border-box; min-height: 60vh; }
@@ -28,7 +40,7 @@
   #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) { max-width: 1240px; display: grid; grid-template-columns: minmax(0, 540px) minmax(0, 1fr); column-gap: 36px; align-content: start; }
   #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > * { grid-column: 1; min-width: 0; }
   #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > .pl-days { position: static; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; flex-wrap: wrap; overflow: visible; }   /* 날짜 칩은 옆으로 밀지 않고 줄을 바꾼다. 여러 줄이 될 수 있어 위에 붙이지 않는다 */
-  #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > .pl-mapbox { grid-column: 2; grid-row: 1 / span 900; align-self: start; position: sticky; top: 66px; height: calc(100vh - 66px - var(--pl-tabs-h) - 24px); min-height: 320px; margin: 0; }
+  #pl-screen .sd-body.pl-tripbody:has(> .pl-mapbox) > .pl-mapbox { grid-column: 2; grid-row: 1 / span 900; align-self: start; position: sticky; top: 66px; height: calc(100vh - var(--wv-top-h) - 66px - var(--pl-tabs-h) - 24px); min-height: 320px; margin: 0; }   /* 보이는 높이 = 화면 − 머리 줄 − 여행 이름 줄(66) − 아래 탭 − 여백 */
 }
 @media (min-width: 1100px) and (hover: hover) and (pointer: fine) {
   #pl-screen .pl-mapguard { display: none; }   /* 마우스로는 화면을 내리다 지도가 잡힐 일이 없다 — 누르지 않아도 바로 움직인다 */

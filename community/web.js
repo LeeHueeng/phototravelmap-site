@@ -529,6 +529,8 @@ async function bootTrips() {
   if (!P || !root.PlannerCore) { const hint = $('#pl-list .pl-hint'); if (hint) hint.textContent = tr('문제가 생겼어요. 잠시 뒤에 다시 해 주세요.'); return; }
   $$w('[data-tripseg] button').forEach((b) => b.addEventListener('click', () => { $$w('[data-tripseg] button').forEach((x) => x.classList.toggle('on', x === b)); P.listView(b.dataset.v === 'past' ? 'past' : 'now'); }));
   P.init(tripsHost);
+  // 머리 줄의 '여행'(지금 이 페이지): 여행 화면이 열려 있어도 머리 줄은 보인다(trips.css) → 열린 것이 있으면 새로 고치지 않고 차례로 닫아 여행 목록으로 돌아간다. 열린 것이 없으면 여느 링크처럼 새로 고친다(새 탭으로 열기 등 보조 키를 누른 때도)
+  { const tab = $('.wv-nav a.wv-tab[aria-current="page"]'); if (tab) tab.addEventListener('click', (e) => { if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !plOpen()) return; e.preventDefault(); for (let i = 0; i < 40 && plOpen(); i++) P.back(); }); }
   { const btn = $('#wv-import'), inp = $('#wv-import-file'); if (btn && inp) { btn.hidden = false; btn.addEventListener('click', () => { inp.value = ''; inp.click(); }); inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (f) importBackup(f); }); } }
   { const inp = $('#wv-patch-file'); if (inp) inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; if (f) patchFromBackup(f); }); }
   if (root.PlannerGMap) { root.PlannerGMap.log = tripsHost.nlog; if (root.PlannerGMap.on()) root.PlannerGMap.ready(); }   // 구글 지도 스크립트를 미리 불러 둔다(앱의 Planner.show 와 같은 일)
